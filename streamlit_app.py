@@ -21,12 +21,12 @@ def load_korean_font():
         font_buffer = BytesIO(response.content)
         pdfmetrics.registerFont(TTFont("NotoSansKR", font_buffer))
         st.success("한글 폰트 로드 성공! (Noto Sans KR)")
+        return "NotoSansKR"
     else:
         st.warning("폰트 다운로드 실패 – 기본 폰트로 진행 (한글 일부 깨질 수 있음)")
-        # fallback: TTFont 등록 생략 (기본 Helvetica 사용, 에러 방지 – 검색 기반)
-        # pdfmetrics.registerFont(TTFont("Helvetica", "Helvetica"))  # 이 줄 제거로 에러 방지
+        return "Helvetica"  # 기본 폰트 반환 (등록 생략, 에러 방지 – 검색 기반)
 
-load_korean_font()
+korean_font = load_korean_font()
 
 st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align:center; color:#374151;'>AI 교과서 맞춤 문제지 생성기</h3>", unsafe_allow_html=True)
@@ -109,8 +109,8 @@ if st.button("PDF 문제지 + 해답지 생성", type="primary", use_container_w
                                     topMargin=3.5 * cm, bottomMargin=3 * cm,
                                     leftMargin=2.5 * cm, rightMargin=2.5 * cm)
             styles = getSampleStyleSheet()
-            body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='NotoSansKR', fontSize=12, leading=22, spaceAfter=20)
-            title_style = ParagraphStyle('Title', parent=styles['Title'], fontName='NotoSansKR', fontSize=18, alignment=1, spaceAfter=30)
+            body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName=korean_font, fontSize=12, leading=22, spaceAfter=20)
+            title_style = ParagraphStyle('Title', parent=styles['Title'], fontName=korean_font, fontSize=18, alignment=1, spaceAfter=30)
 
             story = [
                 Paragraph("엠베스트 SE 광사드림 학원", title_style),
