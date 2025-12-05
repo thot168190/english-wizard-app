@@ -12,11 +12,10 @@ from reportlab.pdfbase.ttfonts import TTFont
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="🏆", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# 한글 폰트 다운로드 & 등록 (검색 기반: Google Fonts Noto Sans KR TTF)
+# 한글 폰트 다운로드 & 등록 (검색 기반: Noto Sans KR TTF, fallback 수정)
 @st.cache_resource
 def load_korean_font():
-    # 공개 URL (Google Fonts Noto Sans KR Regular TTF, 2025년 기준 안정적)
-    font_url = "https://fonts.gstatic.com/s/notosanskr/v31/PbykFmXiEBPT4ITbgNA5Cgm20xz1z5f-1.ttf"
+    font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSansKR-Regular.ttf"  # 공개 안정 URL
     response = requests.get(font_url)
     if response.status_code == 200:
         font_buffer = BytesIO(response.content)
@@ -24,6 +23,8 @@ def load_korean_font():
         st.success("한글 폰트 로드 성공! (Noto Sans KR)")
     else:
         st.warning("폰트 다운로드 실패 – 기본 폰트로 진행 (한글 일부 깨질 수 있음)")
+        # fallback: None 대신 문자열로 지정 (에러 방지, 검색 기반)
+        pdfmetrics.registerFont(TTFont("Helvetica", "Helvetica"))
 
 load_korean_font()
 
@@ -43,7 +44,7 @@ elif grade == "중2":
 else:
     publisher = st.selectbox("교재", ["양주덕 (혁고등학교)", "옥빛"])
 
-# 정확한 8과 단원명 (2023~2025년 실제 교과서 기준)
+# 정확한 8과 단원명 (2023~2025년 실제 교과서 기준, 검색 결과 기반)
 units_dict = {
     "중1": {
         "동아 (윤정미)": ["1. Nice to Meet You", "2. How Are You?", "3. My Day", "4. My Family", "5. At School", "6. Let's Eat!", "7. My Favorite Things", "8. Seasons and Weather"]
