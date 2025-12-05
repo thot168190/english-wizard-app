@@ -12,7 +12,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="🏆", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# 한글 폰트 다운로드 & 등록 (검색 기반: Noto Sans KR TTF, fallback 수정)
+# 한글 폰트 다운로드 & 등록 (검색 기반: Noto Sans KR TTF, fallback 에러 방지)
 @st.cache_resource
 def load_korean_font():
     font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSansKR-Regular.ttf"  # 공개 안정 URL
@@ -23,8 +23,8 @@ def load_korean_font():
         st.success("한글 폰트 로드 성공! (Noto Sans KR)")
     else:
         st.warning("폰트 다운로드 실패 – 기본 폰트로 진행 (한글 일부 깨질 수 있음)")
-        # fallback: None 대신 문자열로 지정 (에러 방지, 검색 기반)
-        pdfmetrics.registerFont(TTFont("Helvetica", "Helvetica"))
+        # fallback: TTFont 등록 생략 (기본 Helvetica 사용, 에러 방지 – 검색 기반)
+        # pdfmetrics.registerFont(TTFont("Helvetica", "Helvetica"))  # 이 줄 제거로 에러 방지
 
 load_korean_font()
 
