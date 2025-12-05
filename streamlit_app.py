@@ -1,10 +1,16 @@
 import os
-import base64
 from io import BytesIO
 
 import streamlit as st
 import google.generativeai as genai
-from weasyprint import HTML
+
+# ReportLab imports
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
@@ -26,68 +32,46 @@ unit = st.selectbox("단원 선택", units)
 
 num_questions = st.slider("문제 수", 10, 50, 30, step=5)
 
-# 폰트 파일 경로 (프로젝트 루트에 fonts/NotoSansKR-Regular.ttf를 배치하세요)
+# 폰트 파일 경로 (프로젝트 루트에 fonts/NotoSansKR-Regular.ttf 를 넣으세요)
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 FONT_PATH = os.path.join(FONT_DIR, "NotoSansKR-Regular.ttf")
-FONT_FAMILY_NAME = "Noto Sans KR"
+FONT_NAME = "NotoSansKR"
 
-def make_font_css_base64(font_path, family_name=FONT_FAMILY_NAME):
-    """
-    폰트 파일을 읽어 base64로 임베드하는 @font-face CSS 문자열을 반환합니다.
-    """
-    with open(font_path, "rb") as f:
-        data = f.read()
-    b64 = base64.b64encode(data).decode("ascii")
-    css = f"""
-    @font-face {{
-        font-family: '{family_name}';
-        src: url('data:font/ttf;base64,{b64}') format('truetype');
-        font-weight: normal;
-        font-style: normal;
-    }}
-    """
-    return css
+def register_font(font_path, font_name=FONT_NAME):
+    if not os.path.exists(font_path):
+        return False, f"폰트 파일이 없습니다: {font_path}"
+    pdfmetrics.registerFont(TTFont(font_name, font_path))
+    return True, "OK"
 
-def html_to_pdf(html_content, title, font_css):
-    """
-    폰트 CSS를 포함한 전체 HTML을 만들고 WeasyPrint로 PDF 생성.
-    """
-    html = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            {font_css}
-            @page {{ size: A4; margin: 2.5cm 2cm 2.5cm 2cm; }}
-            body {{ font-family: '{FONT_FAMILY_NAME}', sans-serif; font-size: 12pt; line-height: 1.8; color: #111827; }}
-            h1 {{ text-align: center; color: #1E40AF; margin-bottom: 0.2em; }}
-            h2 {{ text-align: center; margin-top: 0; color: #374151; font-weight: 600; }}
-            hr {{ border: none; border-top: 1px solid #E5E7EB; margin: 0.8em 0 1.2em 0; }}
-            .question {{ margin: 12px 0; }}
-            pre {{ white-space: pre-wrap; font-family: '{FONT_FAMILY_NAME}', sans-serif; font-size: 12pt; }}
-        </style>
-    </head>
-    <body>
-        <h1>엠베스트 SE 광사드림 학원</h1>
-        <h2>{title}</h2>
-        <hr>
-        <pre>{html_content}</pre>
-    </body>
-    </html>
-    """
+def text_to_pdf_reportlab(text, title, font_name=FONT_NAME):
     buffer = BytesIO()
-    HTML(string=html).write_pdf(buffer)
+    doc = SimpleDocTemplate(buffer,
+                            pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2.5*cm, bottomMargin=2.5*cm)
+    # 스타일 정의
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='TitleStyle', fontName=font_name, fontSize=18, alignment=1, spaceAfter=6))
+    styles.add(ParagraphStyle(name='SubTitle', fontName=font_name, fontSize=14, alignment=1, spaceAfter=12))
+    styles.add(ParagraphStyle(name='Body', fontName=font_name, fontSize=12, leading=18))
+    # 문서 구성
+    story = []
+    story.append(Paragraph("엠베스트 SE 광사드림 학원", styles['TitleStyle']))
+    story.append(Paragraph(title, styles['SubTitle']))
+    story.append(Spacer(1, 6))
+    # Preformatted을 사용해 원본 개행/서식 유지
+    story.append(Preformatted(text, styles['Body']))
+    doc.build(story)
     buffer.seek(0)
     return buffer
 
 if st.button("PDF 문제지 + 해답지 생성 (한글 완벽)", type="primary", use_container_width=True):
-    # 폰트 존재 여부 확인
-    if not os.path.exists(FONT_PATH):
+    ok, msg = register_font(FONT_PATH)
+    if not ok:
         st.error(
-            f"한글 폰트 파일을 찾을 수 없습니다.\n\n"
+            "한글 폰트가 없습니다.\n\n"
             f"프로젝트에 '{FONT_PATH}' 파일을 넣어주세요.\n"
-            "권장: Google Fonts에서 'Noto Sans KR'을 다운로드하여 fonts 폴더에 넣으세요.\n"
-            "예: fonts/NotoSansKR-Regular.ttf"
+            "권장: Google Fonts에서 'Noto Sans KR'을 다운로드하여 fonts 폴더에 넣으세요."
         )
     else:
         with st.spinner("엠베스트 전용 문제지 만드는 중..."):
@@ -112,11 +96,8 @@ if st.button("PDF 문제지 + 해답지 생성 (한글 완벽)", type="primary",
             worksheet = parts[0].replace("===문제지===", "").strip()
             answerkey = parts[1].strip() if len(parts) > 1 else ""
 
-            # 폰트 CSS를 base64로 임베드
-            font_css = make_font_css_base64(FONT_PATH, FONT_FAMILY_NAME)
-
-            ws_pdf = html_to_pdf(worksheet, f"{grade} {unit} 문법·독해 문제 ({num_questions}문항)", font_css)
-            ak_pdf = html_to_pdf(answerkey, f"{grade} {unit} 정답 및 해설", font_css)
+            ws_pdf = text_to_pdf_reportlab(worksheet, f"{grade} {unit} 문법·독해 문제 ({num_questions}문항)")
+            ak_pdf = text_to_pdf_reportlab(answerkey, f"{grade} {unit} 정답 및 해설")
 
             col1, col2 = st.columns(2)
             with col1:
