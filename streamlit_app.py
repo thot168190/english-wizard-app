@@ -45,7 +45,7 @@ if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 # --------------------------------------------------------------------------
-# 2. 교과서 데이터 로딩 (TXT 파일 방식 - 에러 없음)
+# 2. 교과서 데이터 로딩
 # --------------------------------------------------------------------------
 def load_textbook(grade, publisher, unit):
     # 출판사 코드 매핑
@@ -57,15 +57,11 @@ def load_textbook(grade, publisher, unit):
     }
     pub_code = pub_map.get(publisher, "기타")
     
-    # 단원 코드 추출 (예: "1. Lesson 1" -> "1과")
+    # 단원 코드 추출
     unit_code = "1과" 
     if "2" in unit: unit_code = "2과"
     elif "3" in unit: unit_code = "3과"
     elif "4" in unit: unit_code = "4과"
-    elif "5" in unit: unit_code = "5과"
-    elif "6" in unit: unit_code = "6과"
-    elif "7" in unit: unit_code = "7과"
-    elif "8" in unit: unit_code = "8과"
 
     # 파일 경로: data/중1_동아윤_1과.txt
     file_name = f"{grade}_{pub_code}_{unit_code}.txt"
@@ -89,7 +85,6 @@ def create_pdf(header_info, items_data, doc_type="question"):
     style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=10, leading=16)
     style_box = ParagraphStyle('Box', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=14)
 
-    # 2단 레이아웃
     frame_w = 92*mm
     gap = 6*mm
     frame_f_l = Frame(10*mm, 15*mm, frame_w, 220*mm, id='F1_L')
@@ -215,7 +210,7 @@ with c1:
 with c2:
     publisher = st.selectbox("출판사", ["동아 (윤정미)", "동아 (이병민)", "천재 (이재영)", "천재 (정사열)", "비상 (김진완)", "미래엔 (최연희)", "YBM (박준언)"])
 with c3:
-    unit = st.selectbox("단원", ["1. Lesson 1", "2. Lesson 2", "3. Lesson 3", "4. Lesson 4"])
+    unit = st.selectbox("단원", ["1과", "2과", "3과", "4과", "5과", "6과", "7과", "8과"])
 
 # [파일 자동 로딩]
 loaded_text, is_loaded, file_name = load_textbook(grade, publisher, unit)
