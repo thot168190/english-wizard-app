@@ -3,13 +3,14 @@ import google.generativeai as genai
 from fpdf import FPDF
 import json
 import re
+import os
 
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 문제 생성기", page_icon="📝")
 st.title("📝 학원용 AI 문제 생성기 (지문 박스형)")
 
 # ==========================================
-# [기능] 학원 스타일 PDF 생성 함수 (지문 박스 + 2단 편집)
+# [기능] 학원 스타일 PDF 생성 함수
 # ==========================================
 def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     # 1. PDF 객체 생성 (A4 세로)
@@ -17,11 +18,16 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     pdf.add_page()
     
     # 2. 폰트 등록 (fonts 폴더 확인 필수)
+    # 폰트 파일이 있는지 먼저 확인합니다.
     font_path = 'fonts/NotoSansKR-Regular.ttf' 
+    if not os.path.exists(font_path):
+        st.error(f"폰트 파일을 찾을 수 없습니다. (경로: {os.getcwd()}/{font_path})")
+        return None
+
     try:
         pdf.add_font('NotoSansKR', '', font_path, uni=True)
-    except:
-        st.error("폰트 파일을 찾을 수 없습니다. fonts/NotoSansKR-Regular.ttf 파일을 확인하세요.")
+    except Exception as e:
+        st.error(f"폰트 등록 중 오류 발생: {e}")
         return None
 
     # 3. 헤더 (타이틀 + 점수칸)
@@ -36,15 +42,13 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     pdf.line(10, 35, 200, 35)
     pdf.ln(5)
 
-    # 4. [NEW] 지문 박스 출력 (회색 배경 박스)
-    # JSON에서 지문(passage)을 가져옵니다.
+    # 4. 지문 박스 출력 (회색 배경)
     passage_text = data_json.get('passage', '지문 내용이 없습니다.')
     
-    pdf.set_fill_color(240, 240, 240) # 연한 회색 배경
+    pdf.set_fill_color(245, 245, 245) # 아주 연한 회색
     pdf.set_font('NotoSansKR', '', 10)
     
-    # 지문 박스 그리기 (Multi_cell with fill)
-    # 내용이 너무 길면 페이지 넘김 처리가 복잡하므로 적당한 길이 가정
+    # 지문이 들어갈 높이 계산 (대략적으로)
     pdf.multi_cell(0, 8, txt=passage_text, border=1, fill=True)
     pdf.ln(10) # 지문과 문제 사이 간격
 
@@ -94,102 +98,4 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     pdf.cell(0, 10, "[ 정답 및 해설 ]", ln=True)
     pdf.set_font('NotoSansKR', '', 10)
     
-    for i, item in enumerate(quiz_data):
-        ans = item.get('answer', 'N/A')
-        exp = item.get('explanation', '')
-        pdf.multi_cell(0, 8, txt=f"{i+1}번 정답: {ans}\n해설: {exp}")
-        pdf.ln(2)
-
-    return pdf.output(dest='S').encode('latin-1')
-
-# ==========================================
-# 메인 화면 로직
-# ==========================================
-
-with st.sidebar:
-    api_key = st.text_input("Google API Key를 입력하세요", type="password")
-    st.markdown("---")
-    st.markdown("API 키가 없다면 [Google AI Studio](https://aistudio.google.com/)에서 발급받으세요.")
-
-tab1, tab2 = st.tabs(["교과서 정보 입력", "지문 직접 입력"])
-
-grade = ""
-textbook = ""
-unit = ""
-txt_input = ""
-
-with tab1:
-    col1, col2 = st.columns(2)
-    with col1:
-        grade = st.selectbox("학년", ["1학년", "2학년", "3학년"], index=0)
-    with col2:
-        textbook = st.text_input("교과서/출판사 (예: 동아 윤정미)", value="")
-    unit = st.text_input("단원/제재 (예: Lesson 1)", value="")
-
-with tab2:
-    txt_input = st.text_area("지문을 직접 입력하세요", height=150)
-
-generate_btn = st.button("문제 생성하기")
-
-if generate_btn:
-    if not api_key:
-        st.error("🚨 구글 API 키가 필요합니다.")
-        st.stop()
-    
-    genai.configure(api_key=api_key)
-
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    status_text.text("1/3 단계: AI가 지문을 분석 중... 🧐")
-
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash') 
-    except Exception as e:
-        st.error(f"모델 설정 오류: {e}")
-        st.stop()
-
-    context_prompt = ""
-    if not txt_input:
-        if not (grade and textbook and unit):
-            st.warning("교과서 정보를 입력하거나 지문을 입력해주세요.")
-            st.stop()
-        context_prompt = f"중학교 {grade} {textbook} 교과서의 {unit} 본문 내용을 기반으로"
-    else:
-        context_prompt = f"아래 지문을 기반으로:\n{txt_input}\n"
-
-    # [프롬프트 수정] 밑줄 문제를 위해 'passage'를 AI가 재작성해서 주도록 요청
-    final_prompt = f"""
-    {context_prompt}
-    
-    다음 조건에 맞춰 중학교 {grade if grade else '중학생'} 수준의 영어 내용 일치 문제를 3개 만들어줘.
-    
-    [중요 조건]
-    1. 지칭 추론이나 문맥상 의미를 묻는 문제를 낼 경우, **지문에 밑줄을 긋는 대신 해당 부분에 (A), (B), (C) 와 같이 표시**를 해줘.
-    2. 그리고 그 표시가 포함된 **지문 전체(passage)**를 JSON 결과에 반드시 포함해줘.
-    3. 질문에서는 "밑줄 친 부분"이라는 말 대신 "Part (A)" 와 같이 언급해줘.
-    
-    [출력 형식]
-    반드시 아래 JSON 형식만 출력해. (Markdown 코드블록 없이 순수 JSON만)
-    
-    {{
-        "passage": "여기에 (A), (B) 같은 표시가 포함된 지문 전체 내용을 넣어줘",
-        "questions": [
-            {{
-                "question": "문제 질문 (예: What does Part (A) mean?)",
-                "options": ["(a) 보기1", "(b) 보기2", "(c) 보기3", "(d) 보기4", "(e) 보기5"],
-                "answer": "정답",
-                "explanation": "해설"
-            }}
-        ]
-    }}
-    """
-    
-    status_text.text("2/3 단계: AI가 (A), (B) 표시를 넣고 문제를 출제 중... 🧠")
-    progress_bar.progress(50)
-
-    try:
-        response = model.generate_content(final_prompt)
-        text_response = response.text
-
-        # JSON 파싱
-        clean_json_text = re.sub(r'```json\s*|\s*```', '',
+    for i, item in enumerate(quiz_
