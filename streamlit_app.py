@@ -14,11 +14,12 @@ from io import BytesIO
 # --------------------------------------------------------------------------
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
 
-# [중요] 폰트 파일 체크
+# [폰트 설정] fonts 폴더에 파일이 없으면 에러 방지 (기본 폰트로 대체)
 try:
     pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
+    base_font = "NotoSansKR"
 except:
-    st.error("⚠️ 폰트 로드 실패: 'fonts' 폴더에 'NotoSansKR-Regular.ttf' 파일이 있는지 확인해주세요.")
+    base_font = "Helvetica" # 한글 폰트가 없을 경우 영문 기본 폰트 사용
 
 # API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
@@ -30,7 +31,7 @@ else:
 # 2. UI 화면 구성
 # --------------------------------------------------------------------------
 st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level AI 실전 모의고사 생성기</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center; color:#374151;'>AI 실전 모의고사 생성기 (Stable Ver.)</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 # 상단 선택 옵션
@@ -65,11 +66,11 @@ def create_2column_pdf(doc_title, header_info, content_text):
 
     styles = getSampleStyleSheet()
     
-    # 본문 스타일
+    # 본문 스타일 설정
     style_body = ParagraphStyle(
         name='ExamBody',
         parent=styles['Normal'],
-        fontName='NotoSansKR',
+        fontName=base_font,
         fontSize=10.5,
         leading=17,       # 줄 간격
         spaceAfter=12,    # 문단 뒤 간격
@@ -95,16 +96,16 @@ def create_2column_pdf(doc_title, header_info, content_text):
         canvas.saveState()
         
         # 1. 메인 타이틀
-        canvas.setFont("NotoSansKR", 20)
+        canvas.setFont(base_font, 20)
         canvas.drawCentredString(A4[0]/2, 275*mm, header_info['title']) 
         
         # 2. 서브 타이틀
-        canvas.setFont("NotoSansKR", 12)
+        canvas.setFont(base_font, 12)
         canvas.drawCentredString(A4[0]/2, 265*mm, header_info['sub_title']) 
         
         # 3. 결재란 (우측 상단)
         box_y = 250*mm
-        canvas.setFont("NotoSansKR", 10)
+        canvas.setFont(base_font, 10)
         canvas.setLineWidth(0.5)
         
         canvas.line(10*mm, box_y, 200*mm, box_y) 
@@ -119,19 +120,20 @@ def create_2column_pdf(doc_title, header_info, content_text):
         
         # 5. 하단 푸터
         canvas.restoreState()
-        canvas.setFont("NotoSansKR", 9)
+        canvas.setFont(base_font, 9)
         canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
         canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
 
     # [2페이지 이후 그리기 함수]
     def draw_later_page(canvas, doc):
         canvas.saveState()
+        
         # 중앙 점선
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 20*mm, A4[0]/2, 280*mm)
         
         canvas.restoreState()
-        canvas.setFont("NotoSansKR", 9)
+        canvas.setFont(base_font, 9)
         canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
         canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
 
@@ -155,8 +157,8 @@ def create_2column_pdf(doc_title, header_info, content_text):
 # --------------------------------------------------------------------------
 # 4. 메인 실행 및 AI 생성 로직
 # --------------------------------------------------------------------------
-if st.button("High-Level 실전 시험지 생성", type="primary", use_container_width=True):
-    with st.spinner("AI가 문제를 출제하고 있습니다... (약 10~20초 소요)"):
+if st.button("실전 시험지 생성 (Start)", type="primary", use_container_width=True):
+    with st.spinner("AI가 문제를 출제하고 있습니다... (약 20초 소요)"):
         
         prompt = f"""
         당신은 엠베스트 SE 영어 강사입니다.
@@ -180,8 +182,8 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
         """
         
         try:
-            # [수정] 모델을 안정적인 1.5-flash로 변경 (404 에러 방지)
-            model = genai.GenerativeModel("gemini-1.5-flash") 
+            # [수정] 404 에러 방지를 위해 가장 안정적인 'gemini-pro' 모델 사용
+            model = genai.GenerativeModel("gemini-pro") 
             response = model.generate_content(prompt)
             text_data = response.text
             
@@ -194,8 +196,9 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
                 q_text = text_data
                 a_text = "⚠️ 정답지 구분선을 찾지 못했습니다. 전체 내용을 확인해주세요."
 
-            # 헤더 정보
+            # [헤더 정보 설정 - Syntax Error 수정 완료]
             grade_clean = grade.replace("중","").replace("고","")
+            
             header_info_q = {
                 'title': f"{unit} 단원평가",
                 'sub_title': f"[{publisher}] {grade} 내신 대비",
@@ -223,8 +226,9 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
 
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
+            st.warning("팁: 'gemini-pro' 모델을 사용 중입니다. API 키가 유효한지 확인해주세요.")
 
-# [수정] 저작권 안내 오른쪽 정렬
+# 저작권 안내 (우측 하단 정렬)
 st.markdown("<br><hr>", unsafe_allow_html=True)
 st.markdown(
     """
