@@ -82,27 +82,19 @@ def load_textbook(grade, publisher, unit):
 def create_pdf(header_info, items_data, doc_type="question"):
     buffer = BytesIO()
     
-    # [수정] 여백을 최소화하여 종이 활용도 높임 (상하좌우 8mm)
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=8*mm, rightMargin=8*mm,
                           topMargin=8*mm, bottomMargin=8*mm)
 
     styles = getSampleStyleSheet()
-    # [수정] 줄 간격(leading)을 13으로 줄여서 촘촘하게 만듦
     style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=13)
-    
-    # 지문 박스 스타일
     style_passage = ParagraphStyle('Passage', parent=styles['Normal'], fontName=base_font, fontSize=9, leading=12)
 
-    # 레이아웃 프레임 설정
-    frame_w = 95*mm # 프레임 너비를 넓힘
-    gap = 4*mm      # 단 간격을 줄임
+    frame_w = 95*mm 
+    gap = 4*mm      
     
-    # 1페이지 (상단 헤더 있음)
     frame_f_l = Frame(8*mm, 10*mm, frame_w, 230*mm, id='F1_L')
     frame_f_r = Frame(8*mm + frame_w + gap, 10*mm, frame_w, 230*mm, id='F1_R')
-    
-    # 2페이지 (전체 사용)
     frame_l_l = Frame(8*mm, 10*mm, frame_w, 280*mm, id='F2_L')
     frame_l_r = Frame(8*mm + frame_w + gap, 10*mm, frame_w, 280*mm, id='F2_R')
 
@@ -111,19 +103,16 @@ def create_pdf(header_info, items_data, doc_type="question"):
         title = header_info['title']
         if doc_type == "answer": title += " [정답 및 해설]"
         
-        # 헤더 위치 조정
         canvas.setFont(bold_font, 18)
         canvas.drawCentredString(A4[0]/2, 285*mm, title)
         canvas.setFont(base_font, 10)
         canvas.drawCentredString(A4[0]/2, 278*mm, header_info['sub'])
         
-        # 이름 박스
         canvas.setLineWidth(0.5)
         canvas.rect(8*mm, 260*mm, 194*mm, 10*mm)
         canvas.setFont(base_font, 9)
         canvas.drawString(12*mm, 263*mm, f"학년: {header_info['grade']}    |    이름: ________________    |    점수: __________")
         
-        # 구분선
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 10*mm, A4[0]/2, 255*mm)
         canvas.setFont(base_font, 8)
@@ -148,53 +137,45 @@ def create_pdf(header_info, items_data, doc_type="question"):
 
     for idx, item in enumerate(items_data):
         if doc_type == "question":
-            # 1. 지문 박스
+            # 지문
             if item.get('passage'):
                 p = Paragraph(item['passage'].replace("\n", "<br/>"), style_passage)
-                t_passage = Table([[p]], colWidths=[92*mm]) # 너비 꽉 채움
+                t_passage = Table([[p]], colWidths=[92*mm]) 
                 t_passage.setStyle(TableStyle([
                     ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F5F5F5')),
                     ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
-                    ('PADDING', (0,0), (-1,-1), 4), # 안쪽 여백 줄임
+                    ('PADDING', (0,0), (-1,-1), 4), 
                 ]))
                 story.append(t_passage)
-                # [수정] 지문과 문제 사이 간격 최소화 (2mm)
                 story.append(Spacer(1, 2*mm))
 
-            # 2. 문제 번호 및 내용
+            # 문제
             num_str = f"<font color='navy'><b>{idx+1}.</b></font>" 
             p_num = Paragraph(num_str, style_normal)
             
-            # [핵심 수정] 보기가 뭉치지 않게 <br/>로 강제 줄바꿈 처리
             q_content_text = item['question']
             
-            # 보기 처리 로직: 보기가 있다면 한 줄에 하나씩(또는 깔끔하게) 배치
+            # 보기 처리 (영어 보기 줄바꿈)
             if item.get('choices'): 
-                # 보기 앞에 줄바꿈을 넣어 문제와 분리하고, 각 보기 사이에도 줄바꿈 추가
-                # &nbsp; 를 사용하여 들여쓰기 효과
                 formatted_choices = []
                 for choice in item['choices']:
                     formatted_choices.append(f"&nbsp;&nbsp;{choice}")
-                
-                # 보기들을 <br/> 태그로 연결하여 수직 나열
                 choices_block = "<br/>".join(formatted_choices)
                 q_content_text += f"<br/>{choices_block}"
                 
             p_question = Paragraph(q_content_text, style_normal)
 
             data = [[p_num, p_question]]
-            # 테이블 너비 조정 (번호:6mm, 내용:89mm)
             t_q = Table(data, colWidths=[6*mm, 89*mm])
             t_q.setStyle(TableStyle([
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 ('LEFTPADDING', (0,0), (-1,-1), 0),
                 ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                ('TOPPADDING', (0,0), (-1,-1), 0), # 상단 패딩 제거
-                ('BOTTOMPADDING', (0,0), (-1,-1), 0), # 하단 패딩 제거
+                ('TOPPADDING', (0,0), (-1,-1), 0), 
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0), 
             ]))
             
             story.append(KeepTogether([t_q]))
-            # [수정] 문제와 문제 사이 간격 최소화 (3mm) - 종이 절약 핵심
             story.append(Spacer(1, 3*mm))
             
         else:
@@ -245,7 +226,6 @@ def parse_ai_response(text):
         for line in lines:
             line = line.strip()
             if not line: continue
-            # 보기 감지 강화 (①, 1. (1) 등)
             if re.match(r'^[\(]?[①-⑤\d]+[\.\)]', line) or line.startswith('①'):
                 c_lines.append(line)
             else:
@@ -264,6 +244,7 @@ st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level 실전 시
 if "ws_pdf" not in st.session_state: st.session_state.ws_pdf = None
 if "ak_pdf" not in st.session_state: st.session_state.ak_pdf = None
 
+# 상단 설정
 c1, c2, c3 = st.columns(3)
 with c1:
     grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2"])
@@ -281,10 +262,13 @@ else:
     st.warning(f"⚠️ '{file_name}' 파일 없음")
     source_text = st.text_area("직접 본문을 붙여넣으세요.", height=200)
 
-c_opt1, c_opt2 = st.columns(2)
+# 옵션 설정 (난이도 추가됨)
+c_opt1, c_opt2, c_opt3 = st.columns([2, 1, 1])
 with c_opt1:
-    q_types = st.multiselect("출제 유형", ["내용일치", "빈칸추론", "어법", "지칭추론", "순서배열"], default=["내용일치", "빈칸추론", "어법"])
+    q_types = st.multiselect("출제 유형", ["내용일치", "빈칸추론", "어법", "지칭추론", "순서배열", "문장삽입"], default=["내용일치", "빈칸추론", "어법"])
 with c_opt2:
+    difficulty = st.select_slider("난이도", options=["하 (기초)", "중 (내신표준)", "상 (킬러문항)"], value="중 (내신표준)")
+with c_opt3:
     num_q = st.slider("문항 수", 5, 25, 10)
 
 if st.button("시험지 생성 (Start)", type="primary"):
@@ -292,22 +276,32 @@ if st.button("시험지 생성 (Start)", type="primary"):
         st.error("본문 내용이 없습니다.")
     else:
         target_model_name = "gemini-2.5-flash" 
-        with st.spinner(f"AI({target_model_name})가 문제를 출제 중입니다..."):
+        with st.spinner(f"AI({target_model_name})가 최신 경향 문제를 출제 중입니다..."):
+            
+            # [프롬프트 핵심 수정]
+            # 1. 난이도 반영
+            # 2. 발문(질문)은 한국어, 선지(보기)는 영어로 강제
             prompt = f"""
-            당신은 한국의 중학교 영어 내신 시험 출제 위원입니다.
-            아래 [본문]을 사용하여 {num_q}문제의 시험지를 만드세요.
+            당신은 대한민국 '대치동' 스타일의 중학교 영어 내신 전문 출제위원입니다.
+            [본문]을 바탕으로 {num_q}문제의 실전 시험지를 만드세요.
             
             [본문]
             {source_text}
             
-            [유형] {', '.join(q_types)}
+            [설정]
+            - 난이도: {difficulty}
+            - 유형: {', '.join(q_types)}
             
-            [규칙]
-            1. **문제 발문은 반드시 '한국어'로.** (예: "다음 글의 내용과 일치하지 않는 것은?")
-            2. 지문이 필요한 경우 [[지문]]...[[/지문]] 태그 사용.
-            3. 각 문제는 [[문제]] 태그로 시작.
-            4. **보기는 반드시 줄바꿈하여 출력.** (① 보기1 \n ② 보기2 ...)
-            5. 정답은 [[정답]], 해설은 [[해설]] 태그 사용.
+            [필수 출제 규칙 - 이것을 어기면 안됨]
+            1. **발문(Question)은 반드시 '한국어'로 작성하세요.** (예: "다음 글의 내용과 일치하는 것은?")
+            2. **선지(Answer Choices)는 반드시 '영어'로 작성하세요.** (단, 해석 문제는 제외)
+               - 예: ① Jihun plays the guitar. (O)
+               - 예: ① 지훈이는 기타를 친다. (X - 절대 금지)
+            3. 매번 새로운 유형의 문제를 창작하세요. (단순 복사 금지)
+            4. 지문이 필요한 문제는 [[지문]]...[[/지문]] 태그를 사용하세요.
+            5. 각 문제는 [[문제]] 태그로 시작하세요.
+            6. 보기는 ①, ②, ③, ④, ⑤ 형식을 사용하세요.
+            7. 정답은 [[정답]], 해설은 [[해설]] 태그를 사용하세요.
             """
             
             try:
@@ -316,10 +310,10 @@ if st.button("시험지 생성 (Start)", type="primary"):
                 parsed_data = parse_ai_response(response.text)
                 
                 if parsed_data:
-                    header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비", 'grade': grade}
+                    header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비 ({difficulty})", 'grade': grade}
                     st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
                     st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (보기 정렬 & 종이 절약 적용)")
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (난이도: {difficulty}, 선지 영어 적용)")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
