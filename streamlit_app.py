@@ -1,237 +1,105 @@
 import streamlit as st
 import google.generativeai as genai
-from fpdf import FPDF
-import json
-import re
-import os
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from io import BytesIO
 
-# 1. 페이지 설정
-st.set_page_config(page_title="AI 문제 생성기", page_icon="📝")
-st.title("📝 학원용 AI 문제 생성기 (지문 박스형)")
+st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="🏆", layout="wide")
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# ==========================================
-# [기능] 학원 스타일 PDF 생성 함수
-# ==========================================
-def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
-    # 1. PDF 객체 생성 (A4 세로)
-    pdf = FPDF()
-    pdf.add_page()
-    
-    # 2. 폰트 등록 (fonts 폴더 확인 필수)
-    # 폰트 파일이 있는지 먼저 확인합니다.
-    font_path = 'fonts/NotoSansKR-Regular.ttf' 
-    if not os.path.exists(font_path):
-        st.error(f"폰트 파일을 찾을 수 없습니다. (경로: {os.getcwd()}/{font_path})")
-        return None
+st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center; color:#374151;'>AI 교과서 맞춤 문제지 생성기</h3>", unsafe_allow_html=True)
+st.markdown("---")
 
-    try:
-        pdf.add_font('NotoSansKR', '', font_path, uni=True)
-    except Exception as e:
-        st.error(f"폰트 등록 중 오류 발생: {e}")
-        return None
+# 학년 선택
+grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
 
-    # 3. 헤더 (타이틀 + 점수칸)
-    pdf.set_font('NotoSansKR', '', 20)
-    pdf.cell(0, 15, title_text, align='C', ln=True)
-    
-    pdf.set_font('NotoSansKR', '', 11)
-    header_info = "Class: __________   Name: __________   Score: ______ / 100"
-    pdf.cell(0, 10, header_info, align='R', ln=True)
-    
-    pdf.set_line_width(0.5)
-    pdf.line(10, 35, 200, 35)
-    pdf.ln(5)
+# 출판사 선택
+if grade == "중1":
+    publisher = "동아 (윤정미)"
+elif grade == "중2":
+    publisher = st.selectbox("출판사", ["천재 (정사열)", "천재 (이재영)", "비상 (김진완)"])
+else:
+    publisher = "기본 교과서"
 
-    # 4. 지문 박스 출력 (회색 배경)
-    passage_text = data_json.get('passage', '지문 내용이 없습니다.')
-    
-    pdf.set_fill_color(245, 245, 245) # 아주 연한 회색
-    pdf.set_font('NotoSansKR', '', 10)
-    
-    # 지문이 들어갈 높이 계산 (대략적으로)
-    pdf.multi_cell(0, 8, txt=passage_text, border=1, fill=True)
-    pdf.ln(10) # 지문과 문제 사이 간격
+# 단원 8과 정확
+units = {
+    "중1": ["1. Nice to Meet You", "2. How Are You?", "3. My Day", "4. My Family", "5. At School", "6. Let's Eat!", "7. My Favorite Things", "8. Seasons and Weather"],
+    "중2": ["1. Suit Your Taste!", "2. Half a World Away", "3. I Wonder Why", "4. The Art of Living", "5. Explore Your Feelings", "6. Doors to the Wild", "7. Art Around Us", "8. Changes Ahead"],
+    "중3": ["1. Express Your Feelings", "2. Let's Make Our Town Better", "3. Heroes Around Us", "4. Let's Travel", "5. Science and Us", "6. Korean Culture", "7. Global Issues", "8. Peace and Cooperation"],
+    "고1": ["1. People Around Us", "2. Health and Lifestyle", "3. Science and Technology", "4. Environment", "5. Success and Happiness", "6. Popular Culture", "7. Media and Information", "8. Challenges in Life"],
+    "고2": ["1. Life Choices", "2. Leisure and Hobbies", "3. Global Issues", "4. Values and Beliefs", "5. Media and Information", "6. Challenges in Life", "7. Art and Literature", "8. History and Culture"],
+    "고3": ["1. Economy and Society", "2. Ethics and Philosophy", "3. Art and Literature", "4. History and Culture", "5. Science and Future", "6. Global Citizenship", "7. Relationships", "8. Success"]
+}
 
-    # 5. 문제 2단 편집 로직
-    quiz_data = data_json.get('questions', [])
-    
-    pdf.set_font('NotoSansKR', '', 11)
-    
-    total_q = len(quiz_data)
-    import math
-    half_q = math.ceil(total_q / 2)
-    
-    start_y = pdf.get_y() # 지문 박스 끝난 위치부터 시작
-    left_margin = 10
-    right_margin_start = 110
-    line_height = 8
-    
-    # --- 왼쪽 단 ---
-    pdf.set_xy(left_margin, start_y)
-    for i in range(half_q):
-        item = quiz_data[i]
-        question_text = f"{i+1}. {item['question']}"
-        pdf.multi_cell(w=90, h=line_height, txt=question_text)
-        
-        if 'options' in item:
-            for opt in item['options']:
-                pdf.set_x(left_margin + 5)
-                pdf.multi_cell(w=85, h=6, txt=opt)
-        pdf.ln(4)
+unit = st.selectbox("단원 선택", units.get(grade, ["Unit 1"] * 8))
 
-    # --- 오른쪽 단 ---
-    pdf.set_xy(right_margin_start, start_y)
-    for i in range(half_q, total_q):
-        item = quiz_data[i]
-        question_text = f"{i+1}. {item['question']}"
-        pdf.multi_cell(w=90, h=line_height, txt=question_text)
-        
-        if 'options' in item:
-            for opt in item['options']:
-                pdf.set_x(right_margin_start + 5)
-                pdf.multi_cell(w=85, h=6, txt=opt)
-        pdf.ln(4)
+# 옵션
+col1, col2 = st.columns(2)
+with col1:
+    num_questions = st.slider("문제 수", 10, 50, 30, step=5)
+with col2:
+    difficulty = st.radio("난이도", ["Easy", "Medium", "Hard"])
 
-    # 6. 정답 및 해설 (다음 페이지)
-    pdf.add_page()
-    pdf.set_font('NotoSansKR', '', 14)
-    pdf.cell(0, 10, "[ 정답 및 해설 ]", ln=True)
-    pdf.set_font('NotoSansKR', '', 10)
-    
-    for i, item in enumerate(quiz_data):
-        ans = item.get('answer', 'N/A')
-        exp = item.get('explanation', '')
-        pdf.multi_cell(0, 8, txt=f"{i+1}번 정답: {ans}\n해설: {exp}")
-        pdf.ln(2)
+if st.button("Generate PDF Worksheet + Answer Key", type="primary", use_container_width=True):
+    with st.spinner("Creating..."):
+        prompt = f"""
+        Embest SE Gwangsa Dream Academy worksheet
+        {grade} {publisher} {unit} unit
+        Difficulty: {difficulty}, Total {num_questions} questions
+        Make like school exam with ample top/bottom margins and clean alignment for choices ①②③④
+        Output format:
 
-    return pdf.output(dest='S').encode('latin-1')
+        ===Worksheet===
+        1. Problem content
+           ① Choice1  ② Choice2  ③ Choice3  ④ Choice4
 
-# ==========================================
-# 메인 화면 로직
-# ==========================================
+        ===Answer Key===
+        1. Answer: ② Explanation: ...
+        """
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        raw = response.text
 
-with st.sidebar:
-    api_key = st.text_input("Google API Key를 입력하세요", type="password")
-    st.markdown("---")
-    st.markdown("API 키가 없다면 [Google AI Studio](https://aistudio.google.com/)에서 발급받으세요.")
+        parts = raw.split("===Answer Key===")
+        worksheet = parts[0].replace("===Worksheet===", "").strip()
+        answerkey = parts[1].strip() if len(parts) > 1 else ""
 
-tab1, tab2 = st.tabs(["교과서 정보 입력", "지문 직접 입력"])
+        def make_pdf(title, content, is_answer=False):
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=3.5*cm, bottomMargin=3*cm, leftMargin=2.5*cm, rightMargin=2.5*cm)
+            styles = getSampleStyleSheet()
+            body_style = ParagraphStyle('Body', fontName='Helvetica', fontSize=12, leading=22, spaceAfter=20)
+            title_style = ParagraphStyle('Title', fontName='Helvetica-Bold', fontSize=18, alignment=1, spaceAfter=30)
 
-grade = ""
-textbook = ""
-unit = ""
-txt_input = ""
+            story = [
+                Paragraph("Embest SE Gwangsa Dream Academy", title_style),
+                Paragraph(title, title_style),
+                Spacer(1, 40)
+            ]
 
-with tab1:
-    col1, col2 = st.columns(2)
-    with col1:
-        grade = st.selectbox("학년", ["1학년", "2학년", "3학년"], index=0)
-    with col2:
-        textbook = st.text_input("교과서/출판사 (예: 동아 윤정미)", value="")
-    unit = st.text_input("단원/제재 (예: Lesson 1)", value="")
+            for line in content.split('\n'):
+                if line.strip():
+                    if is_answer:
+                        story.append(Paragraph(f"<font color='red'><b>{line.strip()}</b></font>", body_style))
+                    else:
+                        story.append(Paragraph(line.strip(), body_style))
+                    story.append(Spacer(1, 25))
 
-with tab2:
-    txt_input = st.text_area("지문을 직접 입력하세요", height=150)
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
 
-generate_btn = st.button("문제 생성하기")
+        ws = make_pdf(f"{grade} {unit} Grammar/Reading Problem ({num_questions} Q)", worksheet)
+        ak = make_pdf(f"{grade} {unit} Answer Key", answerkey, is_answer=True)
 
-if generate_btn:
-    if not api_key:
-        st.error("🚨 구글 API 키가 필요합니다.")
-        st.stop()
-    
-    genai.configure(api_key=api_key)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button("Worksheet PDF", ws, f"Embest_{grade}_{unit}_Worksheet.pdf", "application/pdf")
+        with col2:
+            st.download_button("Answer Key PDF", ak, f"Embest_{grade}_{unit}_AnswerKey.pdf", "application/pdf")
 
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    status_text.text("1/3 단계: AI가 지문을 분석 중... 🧐")
-
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash') 
-    except Exception as e:
-        st.error(f"모델 설정 오류: {e}")
-        st.stop()
-
-    context_prompt = ""
-    if not txt_input:
-        if not (grade and textbook and unit):
-            st.warning("교과서 정보를 입력하거나 지문을 입력해주세요.")
-            st.stop()
-        context_prompt = f"중학교 {grade} {textbook} 교과서의 {unit} 본문 내용을 기반으로"
-    else:
-        context_prompt = f"아래 지문을 기반으로:\n{txt_input}\n"
-
-    # 프롬프트: 밑줄 대신 (A), (B) 표시 요청
-    final_prompt = f"""
-    {context_prompt}
-    
-    다음 조건에 맞춰 중학교 {grade if grade else '중학생'} 수준의 영어 내용 일치 문제를 3개 만들어줘.
-    
-    [중요 조건]
-    1. 지칭 추론이나 문맥상 의미를 묻는 문제를 낼 경우, **지문에 밑줄을 긋는 대신 해당 부분에 (A), (B), (C) 와 같이 표시**를 해줘.
-    2. 그리고 그 표시가 포함된 **지문 전체(passage)**를 JSON 결과에 반드시 포함해줘.
-    3. 질문에서는 "밑줄 친 부분"이라는 말 대신 "Part (A)" 와 같이 언급해줘.
-    
-    [출력 형식]
-    반드시 아래 JSON 형식만 출력해. (Markdown 코드블록 없이 순수 JSON만)
-    
-    {{
-        "passage": "여기에 (A), (B) 같은 표시가 포함된 지문 전체 내용을 넣어줘",
-        "questions": [
-            {{
-                "question": "문제 질문 (예: What does Part (A) mean?)",
-                "options": ["(a) 보기1", "(b) 보기2", "(c) 보기3", "(d) 보기4", "(e) 보기5"],
-                "answer": "정답",
-                "explanation": "해설"
-            }}
-        ]
-    }}
-    """
-    
-    status_text.text("2/3 단계: AI가 문제를 출제하고 있습니다... 🧠")
-    progress_bar.progress(50)
-
-    try:
-        response = model.generate_content(final_prompt)
-        text_response = response.text
-
-        # [수정완료] 여기가 아까 에러났던 부분입니다. 괄호를 닫았습니다.
-        clean_json_text = re.sub(r'```json\s*|\s*```', '', text_response)
-        
-        # JSON 변환
-        data_json = json.loads(clean_json_text)
-        
-        progress_bar.progress(100)
-        status_text.text("생성 완료! 🎉")
-        
-        # 화면 출력
-        st.markdown("### 📜 지문 미리보기")
-        st.info(data_json.get('passage', '')) 
-        
-        st.markdown("### 📄 생성된 문제")
-        for idx, q in enumerate(data_json.get('questions', [])):
-            st.markdown(f"**{idx+1}. {q['question']}**")
-            for opt in q['options']:
-                st.text(opt)
-            with st.expander(f"정답 확인 ({idx+1}번)"):
-                st.write(f"정답: {q['answer']}")
-                st.write(f"해설: {q['explanation']}")
-            st.markdown("---")
-            
-        # PDF 다운로드
-        st.markdown("### 🖨️ 시험지 인쇄")
-        pdf_bytes = create_academy_style_pdf(data_json, title_text=f"{unit} Review Test" if unit else "English Test")
-        
-        if pdf_bytes:
-            st.download_button(
-                label="📥 PDF 시험지 다운로드",
-                data=pdf_bytes,
-                file_name="academy_test_final.pdf",
-                mime="application/pdf"
-            )
-
-    except json.JSONDecodeError:
-        st.error("AI 응답을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요.")
-        st.write("원본 응답:", text_response)
-    except Exception as e:
-        st.error(f"에러가 발생했습니다: {e}")
+        st.success("완성! 바로 인쇄하세요 (영어 중심으로 깨짐 방지)")
+        st.balloons()
