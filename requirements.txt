@@ -1,3 +1,5 @@
 streamlit
 google-generativeai
-fpdf
+reportlab
+PyPDF2
+requests
