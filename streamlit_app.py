@@ -13,7 +13,7 @@ import requests
 import re
 
 # --------------------------------------------------------------------------
-# 1. 폰트 및 기본 설정
+# 1. 폰트 및 설정
 # --------------------------------------------------------------------------
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="🏆", layout="wide")
 
@@ -59,7 +59,6 @@ def load_textbook(grade, publisher, unit):
         "YBM (박준언)": "YBM박", "YBM (한상호)": "YBM한"
     }
     pub_code = pub_map.get(publisher, "기타")
-    
     unit_code = "1과" 
     if "2" in unit: unit_code = "2과"
     elif "3" in unit: unit_code = "3과"
@@ -78,63 +77,65 @@ def load_textbook(grade, publisher, unit):
     return "", False, file_name
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 엔진 (디자인 수정됨)
+# 3. PDF 생성 엔진 (종이 절약 & 보기 정렬 최적화)
 # --------------------------------------------------------------------------
 def create_pdf(header_info, items_data, doc_type="question"):
     buffer = BytesIO()
+    
+    # [수정] 여백을 최소화하여 종이 활용도 높임 (상하좌우 8mm)
     doc = BaseDocTemplate(buffer, pagesize=A4,
-                          leftMargin=10*mm, rightMargin=10*mm,
-                          topMargin=10*mm, bottomMargin=10*mm)
+                          leftMargin=8*mm, rightMargin=8*mm,
+                          topMargin=8*mm, bottomMargin=8*mm)
 
     styles = getSampleStyleSheet()
-    # 일반 텍스트 스타일
-    style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=10, leading=15)
+    # [수정] 줄 간격(leading)을 13으로 줄여서 촘촘하게 만듦
+    style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=13)
     
-    # [지문 박스 스타일] - 선생님 요청: 회색 배경에 박스 처리
-    style_passage = ParagraphStyle('Passage', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=14)
+    # 지문 박스 스타일
+    style_passage = ParagraphStyle('Passage', parent=styles['Normal'], fontName=base_font, fontSize=9, leading=12)
 
-    # 레이아웃 프레임
-    frame_w = 92*mm
-    gap = 6*mm
+    # 레이아웃 프레임 설정
+    frame_w = 95*mm # 프레임 너비를 넓힘
+    gap = 4*mm      # 단 간격을 줄임
     
-    # 1페이지용 프레임 (상단 헤더 공간 확보)
-    frame_f_l = Frame(10*mm, 15*mm, frame_w, 220*mm, id='F1_L')
-    frame_f_r = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 220*mm, id='F1_R')
+    # 1페이지 (상단 헤더 있음)
+    frame_f_l = Frame(8*mm, 10*mm, frame_w, 230*mm, id='F1_L')
+    frame_f_r = Frame(8*mm + frame_w + gap, 10*mm, frame_w, 230*mm, id='F1_R')
     
-    # 2페이지용 프레임 (전체 사용)
-    frame_l_l = Frame(10*mm, 15*mm, frame_w, 270*mm, id='F2_L')
-    frame_l_r = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 270*mm, id='F2_R')
+    # 2페이지 (전체 사용)
+    frame_l_l = Frame(8*mm, 10*mm, frame_w, 280*mm, id='F2_L')
+    frame_l_r = Frame(8*mm + frame_w + gap, 10*mm, frame_w, 280*mm, id='F2_R')
 
     def draw_first(canvas, doc):
         canvas.saveState()
         title = header_info['title']
         if doc_type == "answer": title += " [정답 및 해설]"
         
-        # 타이틀
+        # 헤더 위치 조정
         canvas.setFont(bold_font, 18)
-        canvas.drawCentredString(A4[0]/2, 280*mm, title)
-        canvas.setFont(base_font, 11)
-        canvas.drawCentredString(A4[0]/2, 273*mm, header_info['sub'])
+        canvas.drawCentredString(A4[0]/2, 285*mm, title)
+        canvas.setFont(base_font, 10)
+        canvas.drawCentredString(A4[0]/2, 278*mm, header_info['sub'])
         
         # 이름 박스
         canvas.setLineWidth(0.5)
-        canvas.rect(10*mm, 255*mm, 190*mm, 12*mm)
-        canvas.setFont(base_font, 10)
-        canvas.drawString(15*mm, 259*mm, f"학년: {header_info['grade']}    |    이름: ________________    |    점수: __________")
-        
-        # 구분선 및 로고
-        canvas.setDash(2, 2)
-        canvas.line(A4[0]/2, 15*mm, A4[0]/2, 250*mm)
+        canvas.rect(8*mm, 260*mm, 194*mm, 10*mm)
         canvas.setFont(base_font, 9)
-        canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
+        canvas.drawString(12*mm, 263*mm, f"학년: {header_info['grade']}    |    이름: ________________    |    점수: __________")
+        
+        # 구분선
+        canvas.setDash(2, 2)
+        canvas.line(A4[0]/2, 10*mm, A4[0]/2, 255*mm)
+        canvas.setFont(base_font, 8)
+        canvas.drawRightString(200*mm, 5*mm, "엠베스트 SE 광사드림 학원")
         canvas.restoreState()
 
     def draw_later(canvas, doc):
         canvas.saveState()
         canvas.setDash(2, 2)
-        canvas.line(A4[0]/2, 15*mm, A4[0]/2, 285*mm) # 2페이지부터는 길게
-        canvas.setFont(base_font, 9)
-        canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
+        canvas.line(A4[0]/2, 10*mm, A4[0]/2, 290*mm)
+        canvas.setFont(base_font, 8)
+        canvas.drawRightString(200*mm, 5*mm, "엠베스트 SE 광사드림 학원")
         canvas.restoreState()
 
     doc.addPageTemplates([
@@ -143,55 +144,66 @@ def create_pdf(header_info, items_data, doc_type="question"):
     ])
 
     story = []
-    
-    # 2페이지부터 레이아웃 변경 명령
     story.append(NextPageTemplate('Later'))
 
     for idx, item in enumerate(items_data):
         if doc_type == "question":
-            # 1. [지문 박스] 만들기
+            # 1. 지문 박스
             if item.get('passage'):
-                # 지문 내용을 박스 안에 넣기
                 p = Paragraph(item['passage'].replace("\n", "<br/>"), style_passage)
-                t_passage = Table([[p]], colWidths=[88*mm])
+                t_passage = Table([[p]], colWidths=[92*mm]) # 너비 꽉 채움
                 t_passage.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F5F5F5')), # 연한 회색 배경
-                    ('BOX', (0,0), (-1,-1), 0.5, colors.grey), # 테두리
-                    ('PADDING', (0,0), (-1,-1), 6), # 안쪽 여백
+                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F5F5F5')),
+                    ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('PADDING', (0,0), (-1,-1), 4), # 안쪽 여백 줄임
                 ]))
                 story.append(t_passage)
-                story.append(Spacer(1, 4*mm)) # 지문과 문제 사이 간격
+                # [수정] 지문과 문제 사이 간격 최소화 (2mm)
+                story.append(Spacer(1, 2*mm))
 
-            # 2. [문제 번호 및 내용] - 번호가 사라지지 않도록 Table 구조 확인
-            # 번호 (진하게, 파란색)
+            # 2. 문제 번호 및 내용
             num_str = f"<font color='navy'><b>{idx+1}.</b></font>" 
             p_num = Paragraph(num_str, style_normal)
             
-            # 문제 내용
-            q_content = item['question']
+            # [핵심 수정] 보기가 뭉치지 않게 <br/>로 강제 줄바꿈 처리
+            q_content_text = item['question']
+            
+            # 보기 처리 로직: 보기가 있다면 한 줄에 하나씩(또는 깔끔하게) 배치
             if item.get('choices'): 
-                q_content += "<br/><br/>" + "<br/>".join(item['choices'])
-            p_question = Paragraph(q_content, style_normal)
+                # 보기 앞에 줄바꿈을 넣어 문제와 분리하고, 각 보기 사이에도 줄바꿈 추가
+                # &nbsp; 를 사용하여 들여쓰기 효과
+                formatted_choices = []
+                for choice in item['choices']:
+                    formatted_choices.append(f"&nbsp;&nbsp;{choice}")
+                
+                # 보기들을 <br/> 태그로 연결하여 수직 나열
+                choices_block = "<br/>".join(formatted_choices)
+                q_content_text += f"<br/>{choices_block}"
+                
+            p_question = Paragraph(q_content_text, style_normal)
 
-            # 테이블로 번호와 문제를 나란히 배치 (번호 칸: 8mm, 문제 칸: 82mm)
             data = [[p_num, p_question]]
-            t_q = Table(data, colWidths=[8*mm, 82*mm])
+            # 테이블 너비 조정 (번호:6mm, 내용:89mm)
+            t_q = Table(data, colWidths=[6*mm, 89*mm])
             t_q.setStyle(TableStyle([
-                ('VALIGN', (0,0), (-1,-1), 'TOP'), # 위쪽 정렬
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 ('LEFTPADDING', (0,0), (-1,-1), 0),
                 ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('TOPPADDING', (0,0), (-1,-1), 0), # 상단 패딩 제거
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0), # 하단 패딩 제거
             ]))
             
-            # 잘리지 않게 한 덩어리로 묶음
-            story.append(KeepTogether([t_q, Spacer(1, 8*mm)]))
+            story.append(KeepTogether([t_q]))
+            # [수정] 문제와 문제 사이 간격 최소화 (3mm) - 종이 절약 핵심
+            story.append(Spacer(1, 3*mm))
             
         else:
-            # 정답지 생성 로직
+            # 정답지
             num_str = f"<b>{idx+1}.</b>"
-            content = f"<b>정답: {item.get('answer', '')}</b><br/><font color='gray' size=9>[해설]</font> {item.get('explanation', '')}"
+            content = f"<b>{item.get('answer', '')}</b> &nbsp; <font color='gray' size=8>[해설]</font> {item.get('explanation', '')}"
             data = [[Paragraph(num_str, style_normal), Paragraph(content, style_normal)]]
-            t_a = Table(data, colWidths=[8*mm, 82*mm])
-            t_a.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('BOTTOMPADDING', (0,0), (-1,-1), 10)]))
+            t_a = Table(data, colWidths=[6*mm, 89*mm])
+            t_a.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('BOTTOMPADDING', (0,0), (-1,-1), 3)]))
             story.append(KeepTogether([t_a]))
 
     doc.build(story)
@@ -199,7 +211,7 @@ def create_pdf(header_info, items_data, doc_type="question"):
     return buffer
 
 # --------------------------------------------------------------------------
-# 4. AI 파싱 (데이터 정리)
+# 4. AI 파싱
 # --------------------------------------------------------------------------
 def parse_ai_response(text):
     questions = []
@@ -208,7 +220,6 @@ def parse_ai_response(text):
         if not block.strip(): continue
         item = {'passage': '', 'question': '', 'choices': [], 'answer': '', 'explanation': ''}
         
-        # 지문 추출
         if "[[지문]]" in block and "[[/지문]]" in block:
             parts = block.split("[[/지문]]")
             item['passage'] = parts[0].split("[[지문]]")[1].strip()
@@ -216,7 +227,6 @@ def parse_ai_response(text):
         else:
             remain = block
             
-        # 정답 및 해설 추출
         if "[[정답]]" in remain:
             parts = remain.split("[[정답]]")
             content_part = parts[0]
@@ -229,15 +239,14 @@ def parse_ai_response(text):
                 item['answer'] = ans_part.strip()
             remain = content_part
         
-        # 문제 및 보기 분리
         lines = remain.strip().split('\n')
         q_lines = []
         c_lines = []
         for line in lines:
             line = line.strip()
             if not line: continue
-            # 보기는 ①, ② 등이나 숫자로 시작하는 경우
-            if re.match(r'^[①-⑤\d]+[\.\)]', line) or line.startswith('①'):
+            # 보기 감지 강화 (①, 1. (1) 등)
+            if re.match(r'^[\(]?[①-⑤\d]+[\.\)]', line) or line.startswith('①'):
                 c_lines.append(line)
             else:
                 q_lines.append(line)
@@ -263,14 +272,13 @@ with c2:
 with c3:
     unit = st.selectbox("단원", ["1과", "2과", "3과", "4과", "5과", "6과", "7과", "8과"])
 
-# 파일 로딩
 loaded_text, is_loaded, file_name = load_textbook(grade, publisher, unit)
 st.markdown("---")
 
 if is_loaded:
     source_text = loaded_text
 else:
-    st.warning(f"⚠️ '{file_name}' 파일 없음 (data 폴더 확인 필요)")
+    st.warning(f"⚠️ '{file_name}' 파일 없음")
     source_text = st.text_area("직접 본문을 붙여넣으세요.", height=200)
 
 c_opt1, c_opt2 = st.columns(2)
@@ -285,8 +293,6 @@ if st.button("시험지 생성 (Start)", type="primary"):
     else:
         target_model_name = "gemini-2.5-flash" 
         with st.spinner(f"AI({target_model_name})가 문제를 출제 중입니다..."):
-            
-            # [프롬프트] 지문 태그 강조
             prompt = f"""
             당신은 한국의 중학교 영어 내신 시험 출제 위원입니다.
             아래 [본문]을 사용하여 {num_q}문제의 시험지를 만드세요.
@@ -296,14 +302,12 @@ if st.button("시험지 생성 (Start)", type="primary"):
             
             [유형] {', '.join(q_types)}
             
-            [필수 규칙]
-            1. **문제의 질문(발문)은 반드시 '한국어'로 하세요.** (예: "다음 글을 읽고 물음에 답하시오.")
-            2. 지문이 필요한 문제는 반드시 [[지문]] ... [[/지문]] 태그로 감싸세요. 
-               (이 태그가 있어야 시험지에서 회색 박스로 예쁘게 나옵니다.)
-            3. 각 문제는 [[문제]] 태그로 시작하세요.
-            4. 문항 번호(1., 2.)는 붙이지 마세요. (코드가 자동으로 붙입니다.)
-            5. 정답은 [[정답]], 해설은 [[해설]] 태그를 사용하세요.
-            6. 보기는 ①, ②, ③, ④, ⑤ 형식을 사용하세요.
+            [규칙]
+            1. **문제 발문은 반드시 '한국어'로.** (예: "다음 글의 내용과 일치하지 않는 것은?")
+            2. 지문이 필요한 경우 [[지문]]...[[/지문]] 태그 사용.
+            3. 각 문제는 [[문제]] 태그로 시작.
+            4. **보기는 반드시 줄바꿈하여 출력.** (① 보기1 \n ② 보기2 ...)
+            5. 정답은 [[정답]], 해설은 [[해설]] 태그 사용.
             """
             
             try:
@@ -315,7 +319,7 @@ if st.button("시험지 생성 (Start)", type="primary"):
                     header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비", 'grade': grade}
                     st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
                     st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (지문 박스 & 번호 복구됨)")
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (보기 정렬 & 종이 절약 적용)")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
