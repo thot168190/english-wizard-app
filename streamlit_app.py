@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-from reportlab.platypus import BaseDocTemplate, Paragraph, Frame, PageTemplate, Table, TableStyle, Spacer, KeepTogether
+from reportlab.platypus import BaseDocTemplate, Paragraph, Frame, PageTemplate, Table, TableStyle, Spacer, KeepTogether, NextPageTemplate
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -82,10 +82,12 @@ def load_textbook(grade, publisher, unit):
     return "", False, file_name
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 엔진
+# 3. PDF 생성 엔진 (여기가 핵심 수정됨!)
 # --------------------------------------------------------------------------
 def create_pdf(header_info, items_data, doc_type="question"):
     buffer = BytesIO()
+    
+    # 여백 설정: 위쪽 여백을 조금 줄여서 내용을 더 많이 담음
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=10*mm, bottomMargin=10*mm)
@@ -94,61 +96,93 @@ def create_pdf(header_info, items_data, doc_type="question"):
     style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=10, leading=16)
     style_box = ParagraphStyle('Box', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=14)
 
+    # 2단 레이아웃 프레임 설정
     frame_w = 92*mm
     gap = 6*mm
-    frame_f_l = Frame(10*mm, 15*mm, frame_w, 220*mm, id='F1_L')
+    
+    # [Page 1 용] - 위쪽에 타이틀 공간(40mm)을 비워둠
+    frame_f_l = Frame(10*mm, 15*mm, frame_w, 220*mm, id='F1_L') 
     frame_f_r = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 220*mm, id='F1_R')
-    frame_l_l = Frame(10*mm, 15*mm, frame_w, 260*mm, id='F2_L')
-    frame_l_r = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 260*mm, id='F2_R')
+    
+    # [Page 2 이후 용] - 위쪽까지 꽉 채움 (높이 270mm)
+    frame_l_l = Frame(10*mm, 15*mm, frame_w, 270*mm, id='F2_L')
+    frame_l_r = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 270*mm, id='F2_R')
 
+    # [1페이지 그리기 함수] : 타이틀 + 이름 박스 그림
     def draw_first(canvas, doc):
         canvas.saveState()
         title = header_info['title']
         if doc_type == "answer": title += " [정답 및 해설]"
+        
+        # 타이틀
         canvas.setFont(bold_font, 18)
         canvas.drawCentredString(A4[0]/2, 280*mm, title)
         canvas.setFont(base_font, 11)
         canvas.drawCentredString(A4[0]/2, 273*mm, header_info['sub'])
+        
+        # 이름 박스
         canvas.setLineWidth(0.5)
         canvas.rect(10*mm, 255*mm, 190*mm, 12*mm)
         canvas.setFont(base_font, 10)
         canvas.drawString(15*mm, 259*mm, f"학년: {header_info['grade']}    |    이름: ________________    |    점수: __________")
+        
+        # 가운데 점선 (구분선)
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 15*mm, A4[0]/2, 250*mm)
+        
+        # 하단 로고
         canvas.setFont(base_font, 9)
         canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
         canvas.restoreState()
 
+    # [2페이지 이후 그리기 함수] : 타이틀 없이 점선과 로고만 그림
     def draw_later(canvas, doc):
         canvas.saveState()
+        
+        # 가운데 점선 (위쪽 끝까지 길게)
         canvas.setDash(2, 2)
-        canvas.line(A4[0]/2, 15*mm, A4[0]/2, 280*mm)
+        canvas.line(A4[0]/2, 15*mm, A4[0]/2, 285*mm) 
+        
+        # 하단 로고
         canvas.setFont(base_font, 9)
         canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
         canvas.restoreState()
 
+    # 템플릿 등록 (First가 기본, Later는 다음 페이지부터)
     doc.addPageTemplates([
         PageTemplate(id='First', frames=[frame_f_l, frame_f_r], onPage=draw_first),
         PageTemplate(id='Later', frames=[frame_l_l, frame_l_r], onPage=draw_later)
     ])
 
     story = []
+    
+    # [핵심] 첫 페이지 내용이 끝나면 자동으로 'Later' 템플릿(2페이지용)으로 넘어가라고 지시
+    story.append(NextPageTemplate('Later'))
+
     for idx, item in enumerate(items_data):
         if doc_type == "question":
+            # 지문 박스
             if item.get('passage'):
                 p = Paragraph(item['passage'].replace("\n", "<br/>"), style_box)
                 t = Table([[p]], colWidths=[88*mm])
                 t.setStyle(TableStyle([('BOX', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke), ('PADDING', (0,0), (-1,-1), 5)]))
                 story.append(t)
                 story.append(Spacer(1, 3*mm))
+            
+            # 문제 내용
             num_text = f"<font color='darkblue'><b>{idx+1}.</b></font>"
             q_text = item['question']
-            if item.get('choices'): q_text += "<br/><br/>" + "<br/>".join(item['choices'])
+            
+            # 보기가 있으면 추가
+            if item.get('choices'): 
+                q_text += "<br/><br/>" + "<br/>".join(item['choices'])
+                
             data = [[Paragraph(num_text, style_normal), Paragraph(q_text, style_normal)]]
             t_q = Table(data, colWidths=[8*mm, 82*mm])
             t_q.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
             story.append(KeepTogether([t_q, Spacer(1, 6*mm)]))
         else:
+            # 정답지
             num_text = f"<b>{idx+1}.</b>"
             content = f"<b>정답: {item.get('answer', '')}</b><br/><font color='gray'>[해설]</font> {item.get('explanation', '')}"
             data = [[Paragraph(num_text, style_normal), Paragraph(content, style_normal)]]
@@ -226,8 +260,7 @@ loaded_text, is_loaded, file_name = load_textbook(grade, publisher, unit)
 
 st.markdown("---")
 if is_loaded:
-    # 수정됨: 본문 내용을 화면(text_area)에 출력하지 않고 변수에만 저장
-    st.success(f"✅ 데이터 창고에서 '{file_name}' 파일을 불러왔습니다! (본문 내용은 AI가 학습했습니다)")
+    # 화면에 본문 출력 X, 녹색 알림 메시지 X (내부적으로만 처리)
     source_text = loaded_text
 else:
     st.warning(f"⚠️ '{file_name}' 파일이 아직 없습니다. (경로: data/{file_name})")
@@ -244,12 +277,12 @@ if st.button("시험지 생성 (Start)", type="primary"):
     if not source_text.strip():
         st.error("본문 내용이 없습니다.")
     else:
-        # 모델명 변수 설정 (2.5 Flash 고정)
         target_model_name = "gemini-2.5-flash" 
 
         with st.spinner(f"AI({target_model_name})가 문제를 출제 중입니다..."):
+            # 프롬프트 강력 수정 (한국어 발문 강제)
             prompt = f"""
-            당신은 영어 내신 시험 출제 위원입니다.
+            당신은 한국의 중학교 영어 내신 시험 출제 위원입니다.
             [본문]을 바탕으로 {num_q}개의 문제를 만드세요.
             
             [본문]
@@ -257,16 +290,17 @@ if st.button("시험지 생성 (Start)", type="primary"):
             
             [유형] {', '.join(q_types)}
             
-            [규칙]
-            1. 인삿말 금지. 바로 데이터 출력.
-            2. 각 문제는 [[문제]] 태그로 시작.
-            3. 지문은 [[지문]]...[[/지문]] 태그 사용.
-            4. 정답은 [[정답]], 해설은 [[해설]] 태그 사용.
-            5. 보기는 ①, ②, ③, ④, ⑤ 사용.
+            [매우 중요한 규칙]
+            1. **문제의 질문(발문)은 반드시 '한국어'로 작성하십시오.** (예: "Choose the correct sentence" -> "다음 중 어법상 옳은 문장은?")
+            2. 영어 지문과 보기를 제외한 모든 설명은 한국어로 하세요.
+            3. 인삿말 금지. 바로 데이터 출력.
+            4. 각 문제는 [[문제]] 태그로 시작.
+            5. 지문은 [[지문]]...[[/지문]] 태그 사용.
+            6. 정답은 [[정답]], 해설은 [[해설]] 태그 사용.
+            7. 보기는 ①, ②, ③, ④, ⑤ 사용.
             """
             
             try:
-                # 2.5 Flash 모델 적용
                 model = genai.GenerativeModel(target_model_name)
                 response = model.generate_content(prompt)
                 parsed_data = parse_ai_response(response.text)
@@ -275,7 +309,8 @@ if st.button("시험지 생성 (Start)", type="primary"):
                     header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비", 'grade': grade}
                     st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
                     st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! ({target_model_name} 사용)")
+                    # 완료 메시지 (성공 시에만 뜸)
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! ({target_model_name})")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
