@@ -78,12 +78,11 @@ def load_textbook(grade, publisher, unit):
     return "", False, file_name
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 엔진 (Grok 버전 + 안정성 보완)
+# 3. PDF 생성 엔진 (아이콘 추가 기능 탑재)
 # --------------------------------------------------------------------------
-def create_pdf(header_info, items_data, doc_type="question"):
+def create_pdf(header_info, items_data, doc_type="question", icon_file=None):
     buffer = BytesIO()
     
-    # 상단 여백 확보 (헤더 공간)
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=35*mm, bottomMargin=15*mm)
@@ -92,7 +91,6 @@ def create_pdf(header_info, items_data, doc_type="question"):
     style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=14)
     style_passage = ParagraphStyle('Passage', parent=styles['Normal'], fontName=base_font, fontSize=9, leading=13)
 
-    # 2단 레이아웃
     col_width = 90*mm
     col_gap = 10*mm
     
@@ -102,24 +100,24 @@ def create_pdf(header_info, items_data, doc_type="question"):
     def draw_page(canvas, doc):
         canvas.saveState()
         
-        # [헤더 디자인] - 이그잼포유 스타일 파란색
+        # [헤더 디자인]
         blue_color = colors.HexColor("#2F74B5")
         
-        # 1. 왼쪽 상단 박스 (출판사/단원)
+        # 1. 왼쪽 상단 박스
         canvas.setFillColor(blue_color)
         canvas.rect(10*mm, 280*mm, 50*mm, 10*mm, fill=1, stroke=0)
         canvas.setFillColor(colors.white)
         canvas.setFont(bold_font, 10)
         canvas.drawCentredString(35*mm, 283*mm, f"{header_info['publisher']} {header_info['unit']}")
         
-        # 2. 그 아래 학년 바
+        # 2. 학년 바
         canvas.setFillColor(colors.lightgrey)
         canvas.rect(10*mm, 274*mm, 50*mm, 6*mm, fill=1, stroke=0)
         canvas.setFillColor(colors.black)
         canvas.setFont(bold_font, 9)
         canvas.drawCentredString(35*mm, 276*mm, header_info['grade'])
         
-        # 3. 우측 타이틀 (예상문제 1회)
+        # 3. 우측 타이틀
         canvas.setFillColor(blue_color)
         canvas.setFont(bold_font, 16)
         canvas.drawRightString(200*mm, 280*mm, header_info['title'])
@@ -129,19 +127,27 @@ def create_pdf(header_info, items_data, doc_type="question"):
         canvas.setLineWidth(1.5)
         canvas.line(10*mm, 270*mm, 200*mm, 270*mm)
         
-        # 5. 가운데 절취선 (점선)
+        # 5. [아이콘 추가 로직] - 타이틀 왼쪽에 댄스 아이콘 배치
+        if icon_file is not None:
+            try:
+                # 아이콘 위치: 우측 상단 타이틀 왼쪽 (x=150mm, y=275mm 근처)
+                # 크기: 10mm x 10mm
+                canvas.drawImage(icon_file, 150*mm, 273*mm, width=12*mm, height=12*mm, mask='auto')
+            except Exception as e:
+                print(f"이미지 오류: {e}")
+
+        # 6. 가운데 절취선
         canvas.setStrokeColor(colors.grey)
         canvas.setLineWidth(0.5)
         canvas.setDash(2, 2)
         mid_x = 105*mm
         canvas.line(mid_x, 15*mm, mid_x, 260*mm)
         
-        # 6. 하단 로고 & 페이지
+        # 7. 하단 로고 & 페이지
         canvas.setDash(1, 0)
         canvas.setFillColor(colors.black)
         canvas.setFont(base_font, 9)
-        page_num = doc.page
-        canvas.drawCentredString(A4[0]/2, 8*mm, f"- {page_num} -")
+        canvas.drawCentredString(A4[0]/2, 8*mm, f"- {doc.page} -")
         
         canvas.setFillColor(colors.HexColor("#469C36"))
         canvas.setFont(bold_font, 9)
@@ -157,12 +163,9 @@ def create_pdf(header_info, items_data, doc_type="question"):
 
     for idx, item in enumerate(items_data):
         
-        # ----------------------------------------------------
-        # 오른쪽 칸 (문제 내용) 구성
-        # ----------------------------------------------------
         content_elements = []
         
-        # 1. 지문 박스
+        # 지문 박스
         if doc_type == "question" and item.get('passage'):
             p_pass = Paragraph(item['passage'].replace("\n", "<br/>"), style_passage)
             t_pass = Table([[p_pass]], colWidths=[80*mm])
@@ -175,20 +178,19 @@ def create_pdf(header_info, items_data, doc_type="question"):
             content_elements.append(t_pass)
             content_elements.append(Spacer(1, 3*mm))
 
-        # 2. 질문 텍스트
+        # 질문
         q_text = item['question']
         p_question = Paragraph(q_text.replace("\n", "<br/>"), style_normal)
         content_elements.append(p_question)
         content_elements.append(Spacer(1, 2*mm))
 
-        # 3. 보기 텍스트
+        # 보기
         if doc_type == "question" and item.get('choices'):
-            # 보기 리스트 생성
             choices_html = "<br/>".join([f"&nbsp;&nbsp;{c}" for c in item['choices']])
             p_choices = Paragraph(choices_html, style_normal)
             content_elements.append(p_choices)
 
-        # 정답지일 경우
+        # 정답
         if doc_type == "answer":
             if item.get('answer'):
                 ans = f"<b>정답: {item['answer']}</b>"
@@ -198,36 +200,27 @@ def create_pdf(header_info, items_data, doc_type="question"):
                 content_elements.append(Spacer(1, 4*mm))
                 content_elements.append(p_ans)
 
-        # ----------------------------------------------------
-        # 왼쪽 칸 (문항 번호) – Grok 스타일 적용 (박스 디자인)
-        # ----------------------------------------------------
+        # 문항 번호
         if doc_type == "question":
-            # 번호 폰트 설정 (bold_font 변수 사용)
             num_html = f"<font name='{bold_font}' color='#2F74B5' size='13'><b>{idx+1}</b></font>"
         else:
             num_html = f"<font name='{bold_font}' size='11'><b>{idx+1}</b></font>"
 
         p_num = Paragraph(num_html, style_normal)
 
-        # ----------------------------------------------------
-        # 메인 테이블 조립: [번호] | [내용]
-        # ----------------------------------------------------
-        # 12mm(번호칸) + 78mm(내용칸) = 90mm (한 단 너비)
         row_data = [[p_num, content_elements]]
 
         t_main = Table(row_data, colWidths=[12*mm, 78*mm])
         t_main.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('ALIGN', (0,0), (0,0), 'CENTER'),        # 번호 가운데 정렬
+            ('ALIGN', (0,0), (0,0), 'CENTER'),
             ('LEFTPADDING', (0,0), (0,0), 0),
             ('RIGHTPADDING', (0,0), (0,0), 0),
-            ('LEFTPADDING', (1,0), (1,-1), 4),       # 내용 왼쪽 여백
-            # [핵심] 번호 칸 디자인 (배경색 + 테두리) -> 번호가 안 보일 수가 없음
+            ('LEFTPADDING', (1,0), (1,-1), 4),
             ('BACKGROUND', (0,0), (0,0), colors.HexColor("#F5F9FF")), 
             ('BOX', (0,0), (0,0), 0.5, colors.HexColor("#2F74B5")),   
         ]))
 
-        # KeepTogether에 리스트로 감싸서 전달 (안전성 확보)
         story.append(KeepTogether([t_main]))
         story.append(Spacer(1, 7*mm)) 
 
@@ -240,20 +233,14 @@ def create_pdf(header_info, items_data, doc_type="question"):
 # --------------------------------------------------------------------------
 def parse_ai_response(text):
     questions = []
-    
-    # 1. 태그 기준으로 나눔
     blocks = text.split("[[문제]]")
-    
-    # 2. 만약 태그가 깨져서 덩어리가 적다면, 강제로 숫자 패턴으로 나눔 (비상 대책)
-    if len(blocks) < 3:
+    if len(blocks) < 2:
          blocks = re.split(r'\n\s*\d+\.\s*', text)
 
     for block in blocks:
         if not block.strip(): continue
-        
         item = {'passage': '', 'question': '', 'choices': [], 'answer': '', 'explanation': ''}
         
-        # 지문 추출
         if "[[지문]]" in block:
             try:
                 parts = block.split("[[/지문]]")
@@ -264,7 +251,6 @@ def parse_ai_response(text):
         else:
             remain = block
             
-        # 정답 추출
         if "[[정답]]" in remain:
             parts = remain.split("[[정답]]")
             content_part = parts[0]
@@ -277,7 +263,6 @@ def parse_ai_response(text):
                 item['answer'] = ans_part.strip()
             remain = content_part
         
-        # 질문과 보기 분리
         lines = remain.strip().split('\n')
         q_lines = []
         c_lines = []
@@ -285,8 +270,6 @@ def parse_ai_response(text):
         for line in lines:
             line = line.strip()
             if not line: continue
-            
-            # 보기 패턴 체크
             is_choice = False
             if re.match(r'^[\(]?[①-⑮\d]+[\.\)]', line): is_choice = True
             if line.startswith('①'): is_choice = True
@@ -295,27 +278,29 @@ def parse_ai_response(text):
             if is_choice:
                 c_lines.append(line)
             else:
-                # 질문 앞에 붙은 번호 제거 (우리가 새로 붙일 거니까)
                 cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
                 if cleaned: q_lines.append(cleaned)
                 
         item['question'] = " ".join(q_lines)
         item['choices'] = c_lines
-        
-        # 질문이 있으면 무조건 추가
-        if item['question']: 
-            questions.append(item)
+        if item['question']: questions.append(item)
             
     return questions
 
 # --------------------------------------------------------------------------
-# 5. 메인 UI
+# 5. UI 화면 (아이콘 업로드 추가)
 # --------------------------------------------------------------------------
 st.markdown("<h1 style='text-align:center; color:#2F74B5;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level 내신대비 문제 출제기</h3>", unsafe_allow_html=True)
 
 if "ws_pdf" not in st.session_state: st.session_state.ws_pdf = None
 if "ak_pdf" not in st.session_state: st.session_state.ak_pdf = None
+
+# [NEW] 아이콘 업로드 기능 (사이드바)
+with st.sidebar:
+    st.header("🎨 디자인 옵션")
+    uploaded_icon = st.file_uploader("댄스 아이콘(로고) 업로드", type=["png", "jpg", "jpeg"])
+    st.info("여기에 '댄스' 아이콘 이미지를 올리면 시험지 헤더에 들어갑니다!")
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -334,7 +319,6 @@ else:
     st.warning(f"⚠️ '{file_name}' 파일이 없습니다.")
     source_text = st.text_area("직접 본문을 붙여넣으세요.", height=150)
 
-# 옵션
 c_opt1, c_opt2, c_opt3 = st.columns([2, 1, 1])
 with c_opt1:
     q_types = st.multiselect("출제 유형", ["내용일치", "빈칸추론", "어법", "지칭추론", "순서배열", "문장삽입"], default=["내용일치", "빈칸추론", "어법"])
@@ -348,11 +332,10 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
         st.error("본문 내용이 없습니다.")
     else:
         target_model_name = "gemini-2.5-flash"
-        with st.spinner(f"AI({target_model_name})가 이그잼포유 스타일로 제작 중입니다..."):
+        with st.spinner(f"AI({target_model_name})가 문제를 생성 중입니다..."):
             
-            # [프롬프트]
             prompt = f"""
-            당신은 한국의 중학교 영어 내신 전문 출제위원입니다.
+            당신은 중학교 영어 내신 전문 출제위원입니다.
             [본문]을 바탕으로 {num_q}문제의 실전 시험지를 만드세요.
             
             [본문]
@@ -362,10 +345,10 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
             - 난이도: {difficulty}
             - 유형: {', '.join(q_types)}
             
-            [필수 규칙]
+            [규칙]
             1. **질문은 '한국어'로.** (예: "다음 글의 내용과 일치하지 않는 것은?")
-            2. **보기는 '영어'로.** (해석 문제는 한글 가능)
-            3. 지문이 필요하면 [[지문]] ... [[/지문]] 태그 필수.
+            2. **보기는 '영어'로.**
+            3. 지문은 [[지문]] ... [[/지문]] 태그 필수.
             4. 각 문제는 [[문제]] 태그로 시작.
             5. 정답은 [[정답]], 해설은 [[해설]].
             """
@@ -376,7 +359,6 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
                 parsed_data = parse_ai_response(response.text)
                 
                 if parsed_data:
-                    # 헤더 정보
                     header = {
                         'publisher': publisher.split()[0], 
                         'unit': unit,
@@ -384,9 +366,12 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
                         'grade': grade
                     }
                     
-                    st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
-                    st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (디자인: 100% 이그잼포유 + 번호박스)")
+                    # [중요] 업로드된 아이콘 파일 전달
+                    icon_img = uploaded_icon if uploaded_icon else None
+                    
+                    st.session_state.ws_pdf = create_pdf(header, parsed_data, "question", icon_file=icon_img)
+                    st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer", icon_file=icon_img)
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (댄스 아이콘 적용 가능)")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
