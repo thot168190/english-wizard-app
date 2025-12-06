@@ -9,7 +9,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 
-# 폰트 등록
+# 폰트 등록 (너 깃허브에 있음)
 pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
 
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
@@ -23,14 +23,12 @@ grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
 unit = st.selectbox("단원", ["1. Nice to Meet You", "2. Art Around Us", "3. Life in the Future", "4. Travel", "5. Science", "6. Culture", "7. Global Issues", "8. Success"])
 num_questions = st.slider("문제 수", 10, 40, 30, step=5)
 
-if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽한 문제)", type="primary", use_container_width=True):
+if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽)", type="primary", use_container_width=True):
     with st.spinner("엠베스트 SE 광사드림 학원 최고급 시험지 만드는 중..."):
-        # 이 프롬프트가 핵심!! 고퀄리티 보장
         prompt = f"""
         너는 대한민국 최상위 영어 학원의 스타 강사야.
         {grade} 영어 교과서 {unit} 단원의 핵심 문법, 어휘, 독해를 완벽하게 반영해서
         실제 학교 중간고사/기말고사 수준의 최고 퀄리티 문제를 {num_questions}개 만들어줘.
-
         문제는 반드시 다음과 같은 형식으로만 출력해 (다른 말 절대 하지 마):
 
         ===문제지===
@@ -54,20 +52,22 @@ if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽한 문제
         response = model.generate_content(prompt)
         raw = response.text
 
-        # 문제지 = ""
-        해답지 = ""
-        current = "문제지"
+        # 영어 변수명으로 변경 (한글 변수명 금지!)
+        worksheet_text = ""
+        answerkey_text = ""
+        current_section = "worksheet"
+
         for line in raw.split('\n'):
             if "===문제지===" in line:
-                current = "문제지"
+                current_section = "worksheet"
                 continue
             elif "===해답지===" in line:
-                current = "해답지"
+                current_section = "answerkey"
                 continue
-            if current == "문제지":
-                문제지 += line + "\n"
+            if current_section == "worksheet":
+                worksheet_text += line + "\n"
             else:
-                해답지 += line + "\n"
+                answerkey_text += line + "\n"
 
         def make_exam_pdf(title, content):
             buffer = BytesIO()
@@ -95,7 +95,7 @@ if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽한 문제
             story.append(header)
             story.append(Spacer(1, 20))
 
-            # 모든 줄 다 넣기 (번호로만 걸러내지 말고 전부!)
+            # 모든 줄 다 넣기
             lines = [line for line in content.split('\n') if line.strip()]
             left = []
             right = []
@@ -122,8 +122,8 @@ if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽한 문제
             buffer.seek(0)
             return buffer
 
-        ws = make_exam_pdf(f"{grade} {unit} 문법·독해 평가", 문제지)
-        ak = make_exam_pdf(f"{grade} {unit} 정답 및 해설", 해답지)
+        ws = make_exam_pdf(f"{grade} {unit} 문법·독해 평가", worksheet_text)
+        ak = make_exam_pdf(f"{grade} {unit} 정답 및 해설", answerkey_text)
 
         col1, col2 = st.columns(2)
         with col1:
