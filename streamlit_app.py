@@ -20,6 +20,7 @@ st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="
 font_path = "NanumGothic.ttf"
 font_bold_path = "NanumGothicBold.ttf"
 
+# 한글 폰트 다운로드 함수
 def download_font(url, save_path):
     if not os.path.exists(save_path):
         try:
@@ -29,9 +30,11 @@ def download_font(url, save_path):
         except:
             pass
 
+# 나눔고딕 폰트 다운로드
 download_font("https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf", font_path)
 download_font("https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf", font_bold_path)
 
+# 폰트 등록
 try:
     pdfmetrics.registerFont(TTFont("NanumGothic", font_path))
     pdfmetrics.registerFont(TTFont("NanumGothic-Bold", font_bold_path))
@@ -41,8 +44,13 @@ except:
     base_font = "Helvetica"
     bold_font = "Helvetica-Bold"
 
+# API 키 설정 (secrets 또는 환경변수 확인)
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+elif "GOOGLE_API_KEY" in os.environ:
+    genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+else:
+    st.error("API 키가 설정되지 않았습니다.")
 
 # --------------------------------------------------------------------------
 # 2. 교과서 데이터 로딩
@@ -62,6 +70,10 @@ def load_textbook(grade, publisher, unit):
     if "2" in unit: unit_code = "2과"
     elif "3" in unit: unit_code = "3과"
     elif "4" in unit: unit_code = "4과"
+    elif "5" in unit: unit_code = "5과"
+    elif "6" in unit: unit_code = "6과"
+    elif "7" in unit: unit_code = "7과"
+    elif "8" in unit: unit_code = "8과"
 
     # 파일 경로: data/중1_동아윤_1과.txt
     file_name = f"{grade}_{pub_code}_{unit_code}.txt"
@@ -103,7 +115,7 @@ def create_pdf(header_info, items_data, doc_type="question"):
         canvas.setLineWidth(0.5)
         canvas.rect(10*mm, 255*mm, 190*mm, 12*mm)
         canvas.setFont(base_font, 10)
-        canvas.drawString(15*mm, 259*mm, f"학년: {header_info['grade']}   |   이름: ________________   |   점수: __________")
+        canvas.drawString(15*mm, 259*mm, f"학년: {header_info['grade']}    |    이름: ________________    |    점수: __________")
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 15*mm, A4[0]/2, 250*mm)
         canvas.setFont(base_font, 9)
@@ -234,7 +246,12 @@ if st.button("시험지 생성 (Start)", type="primary"):
     if not source_text.strip():
         st.error("본문 내용이 없습니다.")
     else:
-        with st.spinner("AI가 문제를 출제 중입니다..."):
+        # 모델명 변수 설정 (사용자가 지정한 2.5 Flash)
+        # ----------------------------------------------------
+        target_model_name = "gemini-2.5-flash" 
+        # ----------------------------------------------------
+
+        with st.spinner(f"AI({target_model_name})가 문제를 출제 중입니다..."):
             prompt = f"""
             당신은 영어 내신 시험 출제 위원입니다.
             [본문]을 바탕으로 {num_q}개의 문제를 만드세요.
@@ -253,8 +270,10 @@ if st.button("시험지 생성 (Start)", type="primary"):
             """
             
             try:
-                # 모델: 1.5-flash (안정적)
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                # ----------------------------------------------------
+                # [수정됨] 선생님 요청대로 2.5 Flash 모델 적용
+                # ----------------------------------------------------
+                model = genai.GenerativeModel(target_model_name)
                 response = model.generate_content(prompt)
                 parsed_data = parse_ai_response(response.text)
                 
@@ -262,7 +281,7 @@ if st.button("시험지 생성 (Start)", type="primary"):
                     header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비", 'grade': grade}
                     st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
                     st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료!")
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! ({target_model_name} 사용)")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
