@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepInFrame
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
@@ -20,14 +20,21 @@ st.markdown("<h3 style='text-align:center; color:#374151;'>AI 교과서 맞춤 �
 st.markdown("---")
 
 grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
-unit = st.selectbox("단원", ["1. Nice to Meet You", "2. Art Around Us", "3. Life in the Future", "4. Travel", "5. Science", "6. Culture", "7. Global Issues", "8. Success"])
-num_questions = st.slider("문제 수", 10, 40, 30, step=5)
+if grade == "중1":
+    publisher = "동아 (윤정미)"
+elif grade == "중2":
+    publisher = st.selectbox("출판사", ["천재 (정사열)", "천재 (이재영)", "비상 (김진완)"])
+else:
+    publisher = "공통 교과서"
+
+unit = st.selectbox("단원 선택", ["1. Nice to Meet You", "2. Art Around Us", "3. Life in the Future", "4. Travel", "5. Science", "6. Culture", "7. Global Issues", "8. Success"])
+num_questions = st.slider("문제 수", 10, 50, 30, step=5)
 
 if st.button("실제 시험지 PDF 생성 (2단+이름칸+학원명)", type="primary", use_container_width=True):
     with st.spinner("엠베스트 전용 실전 시험지 만드는 중..."):
         prompt = f"""
         엠베스트 SE 광사드림 학원 실전 문제지
-        {grade} {unit} 단원, 총 {num_questions}문항
+        {grade} {publisher} {unit} 단원, 총 {num_questions}문항
         학교 시험지처럼 2단으로 구성하고 보기 정렬 깔끔하게
         출력 형식:
 
@@ -46,40 +53,40 @@ if st.button("실제 시험지 PDF 생성 (2단+이름칸+학원명)", type="pri
         worksheet = parts[0].replace("===문제지===", "").strip()
         answerkey = parts[1].strip() if len(parts) > 1 else ""
 
-        def make_exam_pdf(title, content, is_answer=False):
+        def make_exam_pdf(title, content):
             buffer = BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=A4,
                                     topMargin=2*cm, bottomMargin=2*cm,
                                     leftMargin=1.8*cm, rightMargin=1.8*cm)
             styles = getSampleStyleSheet()
-            normal = ParagraphStyle('CustomNormal', parent=styles['Normal'], fontName='NotoSansKR', fontSize=11, leading=16, spaceAfter=12)
-            title_style = ParagraphStyle('CustomTitle', parent=styles['Title'], fontName='NotoSansKR', fontSize=16, alignment=1, spaceAfter=20)
+            normal = ParagraphStyle('NormalKR', parent=styles['Normal'], fontName='NotoSansKR', fontSize=11, leading=18, spaceAfter=12)
+            title_style = ParagraphStyle('TitleKR', parent=styles['Title'], fontName='NotoSansKR', fontSize=16, alignment=1, spaceAfter=20)
             small = ParagraphStyle('Small', fontName='NotoSansKR', fontSize=9, textColor=colors.grey)
 
             story = []
 
-            # 헤더: 이름, 학번, 날짜
+            # 헤더 테이블 (이름, 학번, 날짜)
             header_data = [
-                ["이름: ________________________", "학번: ________", "날짜: ________"],
-                ["", f"{grade} {unit} 문법·독해 평가 ({num_questions}문항)", ""]
+                ["이름: ____________________", f"{grade} {unit} 문법·독해 평가", "날짜: ________"],
+                ["", f"({num_questions}문항)", ""]
             ]
-            header_table = Table(header_data, colWidths=[7*cm, 8*cm, 5*cm])
+            header_table = Table(header_data, colWidths=[6*cm, 9*cm, 5*cm])
             header_table.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), 'NotoSansKR'),
                 ('FONTSIZE', (0,0), (-1,-1), 11),
-                ('ALIGN', (1,1), (1,1), 'CENTER'),
+                ('ALIGN', (1,0), (1,0), 'CENTER'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-                ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#f0f0f0"))
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f0f0f0"))
             ]))
             story.append(header_table)
             story.append(Spacer(1, 20))
 
-            # 문제 2단 구성
-            questions = [q.strip() for q in content.split('\n') if q.strip() and q[0].isdigit()]
+            # 문제 내용 2단으로 분할
+            lines = [line.strip() for line in content.split('\n') if line.strip()]
             left_col = []
             right_col = []
-            for i, q in enumerate(questions):
-                para = Paragraph(q, normal)
+            for i, line in enumerate(lines):
+                para = Paragraph(line, normal)
                 if i % 2 == 0:
                     left_col.append(para)
                     left_col.append(Spacer(1, 15))
@@ -88,22 +95,24 @@ if st.button("실제 시험지 PDF 생성 (2단+이름칸+학원명)", type="pri
                     right_col.append(Spacer(1, 15))
 
             # 2단 테이블
-            data = [[KeepInFrame(maxHeight=24*cm, content=left_col), KeepInFrame(maxHeight=24*cm, content=right_col)]]
+            data = [[left_col, right_col]]
             table = Table(data, colWidths=[9.5*cm, 9.5*cm])
             table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
             story.append(table)
 
             # 페이지 하단 학원명
             story.append(Spacer(1, 30))
-            story.append(Paragraph("엠베스트 SE 광사드림 학원 │ 대표전화: 010-XXXX-XXXX │ 주소: 서울시 강남구", small))
+            story.append(Paragraph("엠베스트 SE 광사드림 학원 │ 대표전화: 010-XXXX-XXXX", small))
             story.append(Paragraph("© 2025 엠베스트 SE 광사드림 학원 All Rights Reserved.", small))
 
             doc.build(story)
             buffer.seek(0)
             return buffer
 
-        ws = make_exam_pdf(f"{grade} {unit} 문법·독해 평가", worksheet)
-        ak = make_exam_pdf(f"{grade} {unit} 정답 및 해설", answerkey, is_answer=True)
+        # 여기서 {{grade}}처럼 중괄호 2개 써서 f-string 충돌 해결!
+        ws_title = f"{grade} {unit} 문법·독해 평가 ({num_questions}문항)"
+        ws = make_exam_pdf(ws_title, worksheet)
+        ak = make_exam_pdf(f"{grade} {unit} 정답 및 해설", answerkey)
 
         col1, col2 = st.columns(2)
         with col1:
