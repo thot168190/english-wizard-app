@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepInFrame
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
@@ -9,7 +9,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 
-# 폰트 등록 (너 깃허브에 있음)
+# 폰트 등록
 pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
 
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
@@ -23,13 +23,12 @@ grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
 unit = st.selectbox("단원", ["1. Nice to Meet You", "2. Art Around Us", "3. Life in the Future", "4. Travel", "5. Science", "6. Culture", "7. Global Issues", "8. Success"])
 num_questions = st.slider("문제 수", 10, 40, 30, step=5)
 
-if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽)", type="primary", use_container_width=True):
+if st.button("최고급 실전 시험지 생성 (2단+이름칸+전화번호)", type="primary", use_container_width=True):
     with st.spinner("엠베스트 SE 광사드림 학원 최고급 시험지 만드는 중..."):
         prompt = f"""
-        너는 대한민국 최상위 영어 학원의 스타 강사야.
-        {grade} 영어 교과서 {unit} 단원의 핵심 문법, 어휘, 독해를 완벽하게 반영해서
-        실제 학교 중간고사/기말고사 수준의 최고 퀄리티 문제를 {num_questions}개 만들어줘.
-        문제는 반드시 다음과 같은 형식으로만 출력해 (다른 말 절대 하지 마):
+        엠베스트 SE 광사드림 학원 실전 문제지
+        {grade} {unit} 단원, 총 {num_questions}문항
+        출력 형식:
 
         ===문제지===
         1. What is the main idea of the passage?
@@ -38,33 +37,25 @@ if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽)", type="
            ③ To compare modern and traditional art
            ④ To introduce famous artists
 
-        2. The word "masterpiece" in paragraph 2 is closest in meaning to ______.
-           ① failure   ② average work   ③ great work   ④ copy
-
         ===해답지===
         1. ③ To compare modern and traditional art
            해설: 지문 전체에서 현대 미술과 전통 미술을 비교하고 있습니다.
-
-        2. ③ great work
-           해설: masterpiece는 '걸작, 명작'이라는 뜻으로 great work와 가장 가깝습니다.
         """
         model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
         raw = response.text
 
-        # 영어 변수명으로 변경 (한글 변수명 금지!)
         worksheet_text = ""
         answerkey_text = ""
-        current_section = "worksheet"
-
+        current = "worksheet"
         for line in raw.split('\n'):
             if "===문제지===" in line:
-                current_section = "worksheet"
+                current = "worksheet"
                 continue
             elif "===해답지===" in line:
-                current_section = "answerkey"
+                current = "answerkey"
                 continue
-            if current_section == "worksheet":
+            if current == "worksheet":
                 worksheet_text += line + "\n"
             else:
                 answerkey_text += line + "\n"
@@ -95,25 +86,29 @@ if st.button("최고급 실전 시험지 생성 (2단+이름칸+완벽)", type="
             story.append(header)
             story.append(Spacer(1, 20))
 
-            # 모든 줄 다 넣기
-            lines = [line for line in content.split('\n') if line.strip()]
-            left = []
-            right = []
+            # 문제 2단 (KeepInFrame으로 감싸서 LayoutError 방지)
+            lines = [line.strip() for line in content.split('\n') if line.strip()]
+            left_col = []
+            right_col = []
             for i, line in enumerate(lines):
                 p = Paragraph(line, normal)
                 if i % 2 == 0:
-                    left.append(p)
-                    left.append(Spacer(1, 18))
+                    left_col.append(p)
+                    left_col.append(Spacer(1, 18))
                 else:
-                    right.append(p)
-                    right.append(Spacer(1, 18))
+                    right_col.append(p)
+                    right_col.append(Spacer(1, 18))
 
-            data = [[left, right]]
+            # KeepInFrame으로 감싸서 에러 방지
+            left_frame = KeepInFrame(maxWidth=9.5*cm, maxHeight=24*cm, content=left_col)
+            right_frame = KeepInFrame(maxWidth=9.5*cm, maxHeight=24*cm, content=right_col)
+
+            data = [[left_frame, right_frame]]
             table = Table(data, colWidths=[9.5*cm, 9.5*cm])
             table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
             story.append(table)
 
-            # 하단
+            # 하단 (전화번호 넣음)
             story.append(Spacer(1, 30))
             story.append(Paragraph("엠베스트 SE 광사드림 학원 │ 대표전화: 010-6248-3405", normal))
             story.append(Paragraph("© 2025 엠베스트 SE 광사드림 학원 All Rights Reserved.", normal))
