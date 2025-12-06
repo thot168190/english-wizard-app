@@ -44,7 +44,7 @@ except:
     base_font = "Helvetica"
     bold_font = "Helvetica-Bold"
 
-# API 키 설정 (secrets 또는 환경변수 확인)
+# API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 elif "GOOGLE_API_KEY" in os.environ:
@@ -56,7 +56,6 @@ else:
 # 2. 교과서 데이터 로딩
 # --------------------------------------------------------------------------
 def load_textbook(grade, publisher, unit):
-    # 출판사 코드 매핑
     pub_map = {
         "동아 (윤정미)": "동아윤", "동아 (이병민)": "동아이",
         "천재 (이재영)": "천재이", "천재 (정사열)": "천재정",
@@ -65,7 +64,6 @@ def load_textbook(grade, publisher, unit):
     }
     pub_code = pub_map.get(publisher, "기타")
     
-    # 단원 코드 추출
     unit_code = "1과" 
     if "2" in unit: unit_code = "2과"
     elif "3" in unit: unit_code = "3과"
@@ -75,7 +73,6 @@ def load_textbook(grade, publisher, unit):
     elif "7" in unit: unit_code = "7과"
     elif "8" in unit: unit_code = "8과"
 
-    # 파일 경로: data/중1_동아윤_1과.txt
     file_name = f"{grade}_{pub_code}_{unit_code}.txt"
     file_path = os.path.join("data", file_name)
     
@@ -229,8 +226,9 @@ loaded_text, is_loaded, file_name = load_textbook(grade, publisher, unit)
 
 st.markdown("---")
 if is_loaded:
-    st.success(f"✅ 데이터 창고에서 '{file_name}' 파일을 불러왔습니다!")
-    source_text = st.text_area("시험 범위 본문 (자동 입력됨)", value=loaded_text, height=200)
+    # 수정됨: 본문 내용을 화면(text_area)에 출력하지 않고 변수에만 저장
+    st.success(f"✅ 데이터 창고에서 '{file_name}' 파일을 불러왔습니다! (본문 내용은 AI가 학습했습니다)")
+    source_text = loaded_text
 else:
     st.warning(f"⚠️ '{file_name}' 파일이 아직 없습니다. (경로: data/{file_name})")
     st.info("좌측 파일 목록에서 'data' 폴더를 만들고, 해당 이름으로 파일을 만들어 본문을 붙여넣어 주세요.")
@@ -246,10 +244,8 @@ if st.button("시험지 생성 (Start)", type="primary"):
     if not source_text.strip():
         st.error("본문 내용이 없습니다.")
     else:
-        # 모델명 변수 설정 (사용자가 지정한 2.5 Flash)
-        # ----------------------------------------------------
+        # 모델명 변수 설정 (2.5 Flash 고정)
         target_model_name = "gemini-2.5-flash" 
-        # ----------------------------------------------------
 
         with st.spinner(f"AI({target_model_name})가 문제를 출제 중입니다..."):
             prompt = f"""
@@ -270,9 +266,7 @@ if st.button("시험지 생성 (Start)", type="primary"):
             """
             
             try:
-                # ----------------------------------------------------
-                # [수정됨] 선생님 요청대로 2.5 Flash 모델 적용
-                # ----------------------------------------------------
+                # 2.5 Flash 모델 적용
                 model = genai.GenerativeModel(target_model_name)
                 response = model.generate_content(prompt)
                 parsed_data = parse_ai_response(response.text)
