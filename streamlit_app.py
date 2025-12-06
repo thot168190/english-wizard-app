@@ -11,6 +11,7 @@ from io import BytesIO
 import os
 import requests
 import re
+import PyPDF2  # PDF 읽기용 라이브러리 (설치 필요: pip install PyPDF2)
 
 # --------------------------------------------------------------------------
 # 1. 초기 설정 및 폰트 자동 설치
@@ -20,7 +21,7 @@ st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="
 font_path = "NanumGothic.ttf"
 font_bold_path = "NanumGothicBold.ttf"
 
-# 폰트 다운로드 (일반, 볼드)
+# 폰트 다운로드 함수
 def download_font(url, save_path):
     if not os.path.exists(save_path):
         try:
@@ -30,6 +31,7 @@ def download_font(url, save_path):
         except:
             pass
 
+# 나눔고딕 폰트 준비
 download_font("https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf", font_path)
 download_font("https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf", font_bold_path)
 
@@ -42,6 +44,7 @@ except:
     base_font = "Helvetica"
     bold_font = "Helvetica-Bold"
 
+# API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
@@ -49,7 +52,7 @@ if "GOOGLE_API_KEY" in st.secrets:
 # 2. UI 구성
 # --------------------------------------------------------------------------
 st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level 실전 시험지 생성기 (이그잼포유 스타일)</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level 실전 시험지 생성기 (PDF 업로드 지원)</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 if "ws_pdf" not in st.session_state:
@@ -57,10 +60,10 @@ if "ws_pdf" not in st.session_state:
 if "ak_pdf" not in st.session_state:
     st.session_state.ak_pdf = None
 
-# [옵션 설정]
+# [좌측] 옵션 설정
 col1, col2, col3 = st.columns(3)
 with col1:
-    grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2"])
+    grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
 with col2:
     if grade == "중1":
         pub_list = ["동아 (윤정미)", "천재 (이재영)", "비상 (김진완)", "미래엔 (최연희)"]
@@ -72,40 +75,54 @@ with col2:
         pub_list = ["기타 / 공통"]
     publisher = st.selectbox("출판사", pub_list)
 with col3:
-    unit = st.text_input("단원명", "Lesson 1. New Start")
+    unit = st.text_input("단원명", "Lesson 1")
 
-# [입력창]
-st.markdown("### 📝 본문 및 지문 입력")
-source_text = st.text_area("시험 범위 본문을 붙여넣으세요 (AI가 이 내용을 분석해 문제를 냅니다)", height=200)
+# [중앙] 파일 업로드 기능 추가
+st.markdown("### 📂 교과서/본문 자료 업로드")
+st.info("가지고 계신 PDF 파일을 아래에 끌어다 놓으세요. AI가 내용을 읽어서 문제를 만듭니다.")
 
+uploaded_file = st.file_uploader("PDF 파일 업로드", type=['pdf'])
+source_text = ""
+
+# PDF 텍스트 추출 로직
+if uploaded_file is not None:
+    try:
+        reader = PyPDF2.PdfReader(uploaded_file)
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                source_text += extracted + "\n"
+        st.success(f"✅ 파일 내용을 성공적으로 읽었습니다! (총 {len(source_text)}자)")
+    except Exception as e:
+        st.error(f"PDF 읽기 실패: {e}")
+
+# 텍스트가 없을 경우 직접 입력할 수 있는 공간도 남겨둠
+if not source_text:
+    source_text = st.text_area("또는 여기에 본문을 직접 붙여넣으셔도 됩니다.", height=150)
+
+# [하단] 문제 유형 설정
 c1, c2 = st.columns(2)
 with c1:
-    q_types = st.multiselect("문제 유형", ["주제/제목", "내용일치", "빈칸추론", "어법상 틀린 것", "어휘 적절성", "순서배열", "문장삽입"], default=["내용일치", "어법상 틀린 것", "빈칸추론"])
+    q_types = st.multiselect("문제 유형 선택", ["주제/제목", "내용일치", "빈칸추론", "어법상 틀린 것", "어휘 적절성", "순서배열", "문장삽입"], default=["내용일치", "어법상 틀린 것", "빈칸추론"])
 with c2:
-    num_q = st.slider("문항 수", 5, 30, 15)
+    num_q = st.slider("문항 수", 5, 30, 20)
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 엔진 (ReportLab 고급 기능)
+# 3. PDF 생성 엔진 (2단, 첫장 헤더, 우측 하단 학원명, 번호/지문 박스)
 # --------------------------------------------------------------------------
 def create_exam_pdf(header_info, questions_data, is_answer_key=False):
     buffer = BytesIO()
     
-    # 문서 설정 (여백 좁게)
+    # 문서 설정
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=10*mm, bottomMargin=10*mm)
 
-    # 스타일 정의
     styles = getSampleStyleSheet()
-    
-    # 문제 본문 스타일
-    style_q = ParagraphStyle('Q', parent=styles['Normal'], fontName=base_font, fontSize=10, leading=14, spaceAfter=2)
-    # 보기 스타일
-    style_c = ParagraphStyle('C', parent=styles['Normal'], fontName=base_font, fontSize=9.5, leading=14, leftIndent=5)
-    # 지문 박스 스타일
+    style_q = ParagraphStyle('Q', parent=styles['Normal'], fontName=base_font, fontSize=10, leading=15)
     style_box_text = ParagraphStyle('BoxText', parent=styles['Normal'], fontName=base_font, fontSize=9, leading=13)
 
-    # --- 프레임 (2단 레이아웃) ---
+    # 2단 프레임
     frame_w = 92*mm
     gap = 6*mm
     
@@ -113,11 +130,11 @@ def create_exam_pdf(header_info, questions_data, is_answer_key=False):
     frame_first_left = Frame(10*mm, 15*mm, frame_w, 225*mm, id='F1_L')
     frame_first_right = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 225*mm, id='F1_R')
     
-    # 2페이지 (꽉 채움)
+    # 2페이지 이후 (상단 여백 줄임)
     frame_later_left = Frame(10*mm, 15*mm, frame_w, 265*mm, id='F2_L')
     frame_later_right = Frame(10*mm + frame_w + gap, 15*mm, frame_w, 265*mm, id='F2_R')
 
-    # --- 헤더/푸터 그리기 ---
+    # [1페이지 헤더 그리기]
     def draw_first(canvas, doc):
         canvas.saveState()
         # 타이틀
@@ -136,38 +153,37 @@ def create_exam_pdf(header_info, questions_data, is_answer_key=False):
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 15*mm, A4[0]/2, 250*mm)
         
-        # 푸터
+        # 푸터 (우측 하단 학원명)
         canvas.restoreState()
         canvas.setFont(base_font, 9)
         canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
         canvas.drawCentredString(A4[0]/2, 8*mm, f"- {doc.page} -")
 
+    # [2페이지 이후 헤더 그리기 (헤더 없음)]
     def draw_later(canvas, doc):
         canvas.saveState()
-        # 2페이지부터는 헤더 없음, 중앙 점선만
+        # 중앙 점선
         canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 15*mm, A4[0]/2, 285*mm)
         
+        # 푸터 (우측 하단 학원명)
         canvas.restoreState()
         canvas.setFont(base_font, 9)
         canvas.drawRightString(200*mm, 8*mm, "엠베스트 SE 광사드림 학원")
         canvas.drawCentredString(A4[0]/2, 8*mm, f"- {doc.page} -")
 
-    # 템플릿 등록
     doc.addPageTemplates([
         PageTemplate(id='First', frames=[frame_first_left, frame_first_right], onPage=draw_first),
         PageTemplate(id='Later', frames=[frame_later_left, frame_later_right], onPage=draw_later)
     ])
 
-    # --- 내용 채우기 ---
     story = []
     
     # 문제 데이터 처리
     for q_idx, q_data in enumerate(questions_data):
-        # 1. 지문 박스 (있으면)
+        # 1. 지문 박스 (있으면) - 회색 배경
         if q_data.get('passage'):
             p_text = Paragraph(q_data['passage'].replace('\n', '<br/>'), style_box_text)
-            # 지문 테두리 박스 (Table로 구현)
             t_box = Table([[p_text]], colWidths=[88*mm])
             t_box.setStyle(TableStyle([
                 ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
@@ -180,8 +196,7 @@ def create_exam_pdf(header_info, questions_data, is_answer_key=False):
             story.append(t_box)
             story.append(Spacer(1, 3*mm))
 
-        # 2. 문제 번호와 내용 (번호 강조)
-        # 테이블을 써서 번호와 문제를 분리 (1열: 번호, 2열: 문제)
+        # 2. 문제 번호와 내용 (번호 파란색 강조)
         q_num_text = f"<b>{q_idx+1}.</b>"
         q_body_text = q_data['question']
         
@@ -196,23 +211,24 @@ def create_exam_pdf(header_info, questions_data, is_answer_key=False):
         
         t_question.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (0,0), 0), # 번호 왼쪽 여백 제거
+            ('LEFTPADDING', (0,0), (0,0), 0),
         ]))
         
-        # 문제 덩어리가 페이지 넘김에 쪼개지지 않도록 KeepTogether 사용
         story.append(KeepTogether([t_question, Spacer(1, 5*mm)]))
 
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    try:
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"PDF 생성 중 오류: {e}")
+        return None
 
 # --------------------------------------------------------------------------
-# 4. AI 생성 및 파싱 로직
+# 4. AI 파싱 로직
 # --------------------------------------------------------------------------
 def parse_ai_response(text):
-    # AI 응답을 파싱하여 리스트로 변환하는 간단한 로직
     questions = []
-    # "문제" 구분자로 나누기 (간이 파싱)
     raw_questions = re.split(r'===문제 \d+===', text)
     
     for raw_q in raw_questions:
@@ -220,17 +236,12 @@ def parse_ai_response(text):
         
         q_item = {'passage': '', 'question': '', 'choices': []}
         
-        # 지문 추출
         if "[지문]" in raw_q:
-            parts = raw_q.split("[지문]")
-            # 앞부분이 문제일 수도 있고 뒷부분이 지문일 수도 있음. 포맷에 따라 다름.
-            # 프롬프트에서 [지문]내용[/지문] 형태로 유도
             match = re.search(r'\[지문\](.*?)\[/지문\]', raw_q, re.DOTALL)
             if match:
                 q_item['passage'] = match.group(1).strip()
-                raw_q = raw_q.replace(match.group(0), "") # 지문 제거 후 나머지 처리
+                raw_q = raw_q.replace(match.group(0), "")
 
-        # 보기 추출 (① ~ ⑤)
         choices = []
         lines = raw_q.strip().split('\n')
         q_text_lines = []
@@ -249,29 +260,32 @@ def parse_ai_response(text):
             
     return questions
 
+# --------------------------------------------------------------------------
+# 5. 실행 로직
+# --------------------------------------------------------------------------
 if st.button("High-Level 시험지 생성", type="primary"):
     if not source_text:
-        st.error("본문을 입력해주세요!")
+        st.error("본문이 없습니다. PDF를 업로드하거나 텍스트를 입력해주세요.")
     else:
-        with st.spinner("AI가 문제를 출제하고 있습니다... (Gemini 1.5 Pro)"):
+        with st.spinner("AI가 문제를 출제하고 있습니다... (Gemini 2.5 Flash)"):
             prompt = f"""
             당신은 한국의 중고등 영어 내신 전문 강사입니다.
             제공된 [본문]을 바탕으로 {num_q}개의 시험 문제를 만드세요.
             
             [본문]
-            {source_text}
+            {source_text[:10000]} (내용이 너무 길면 일부만 전송됨)
             
             [출제 유형]
             {', '.join(q_types)}
             
             [필수 출력 형식 - 엄격 준수]
-            각 문제는 아래 포맷을 정확히 지켜주세요. 파싱을 위해 태그를 사용합니다.
+            각 문제는 아래 포맷을 정확히 지켜주세요.
             
             ===문제 1===
             [지문]
-            (필요하다면 여기에 본문의 일부나 변형된 지문을 넣으세요. 없으면 생략 가능)
+            (필요하다면 여기에 본문의 일부나 변형된 지문을 넣으세요. 없으면 생략)
             [/지문]
-            다음 글을 읽고 물음에 답하시오. (혹은 빈칸에 들어갈 말은?)
+            문제 내용...
             ① choice 1
             ② choice 2
             ③ choice 3
@@ -280,28 +294,31 @@ if st.button("High-Level 시험지 생성", type="primary"):
             
             ===문제 2===
             ...
-            
-            (계속)
             """
             
             try:
-                model = genai.GenerativeModel("gemini-1.5-pro")
+                # [요청하신 모델 유지]
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 response = model.generate_content(prompt)
                 
-                # 파싱
                 parsed_data = parse_ai_response(response.text)
                 
-                # PDF 생성
+                # 정답지 생성용 (간단히)
+                prompt_ans = f"위에서 만든 문제들의 정답과 해설을 알려줘. 형식: 1. 정답 / 해설"
+                # response_ans = model.generate_content(prompt_ans) # 필요시 활성화
+
                 header = {'title': f"{unit} 실전 TEST", 'sub': f"{publisher} - {grade} 내신대비", 'grade': grade}
+                
                 st.session_state.ws_pdf = create_exam_pdf(header, parsed_data)
                 
                 st.success(f"총 {len(parsed_data)}문항 생성 완료!")
                 
             except Exception as e:
                 st.error(f"오류 발생: {e}")
+                st.info("팁: 모델명이 정확하지 않거나 API 키 문제일 수 있습니다.")
 
 # 다운로드
 if st.session_state.ws_pdf:
-    st.download_button("📄 시험지 다운로드 (PDF)", st.session_state.ws_pdf, "Final_Exam.pdf", "application/pdf", use_container_width=True)
+    st.download_button("📄 시험지 다운로드", st.session_state.ws_pdf, "Final_Exam.pdf", "application/pdf", use_container_width=True)
 
 st.markdown("<br><div style='text-align:right; color:gray'>Developed by 엠베스트 SE 광사드림 학원</div>", unsafe_allow_html=True)
