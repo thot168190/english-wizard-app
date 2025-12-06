@@ -14,18 +14,17 @@ from io import BytesIO
 # --------------------------------------------------------------------------
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
 
-# [중요] 폰트 파일이 'fonts' 폴더 안에 'NotoSansKR-Regular.ttf'라는 이름으로 있어야 합니다.
-# 파일이 없으면 에러가 발생하므로 예외처리를 해두었습니다.
+# [중요] 폰트 파일 체크
 try:
     pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
 except:
-    st.error("⚠️ 폰트 로드 실패: 'fonts/NotoSansKR-Regular.ttf' 파일을 찾을 수 없습니다.")
+    st.error("⚠️ 폰트 로드 실패: 'fonts' 폴더에 'NotoSansKR-Regular.ttf' 파일이 있는지 확인해주세요.")
 
-# API 키 설정 (secrets.toml 파일에 GOOGLE_API_KEY가 있어야 합니다)
+# API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 else:
-    st.warning("⚠️ Google API Key가 설정되지 않았습니다. 로컬 테스트 시 st.secrets를 확인해주세요.")
+    st.warning("⚠️ Google API Key가 설정되지 않았습니다. secrets.toml 파일을 확인해주세요.")
 
 # --------------------------------------------------------------------------
 # 2. UI 화면 구성
@@ -59,14 +58,14 @@ with c2:
 def create_2column_pdf(doc_title, header_info, content_text):
     buffer = BytesIO()
     
-    # 문서 여백 설정 (상하좌우 여백)
+    # 문서 여백 설정
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=15*mm, bottomMargin=15*mm)
 
     styles = getSampleStyleSheet()
     
-    # 본문 스타일 (가독성 최적화)
+    # 본문 스타일
     style_body = ParagraphStyle(
         name='ExamBody',
         parent=styles['Normal'],
@@ -77,29 +76,25 @@ def create_2column_pdf(doc_title, header_info, content_text):
         alignment=0       # 좌정렬
     )
 
-    # 2단 프레임 치수 설정
+    # 2단 프레임 설정
     frame_w = 90*mm   # 한 단의 너비
     gap = 10*mm       # 단 사이 간격
     
-    # 1페이지용 프레임 높이 (헤더 공간 확보를 위해 조금 짧게 설정)
-    frame_h_first = 220*mm 
-    # 2페이지부터 쓸 프레임 높이 (전체 활용)
-    frame_h_later = 255*mm 
+    frame_h_first = 220*mm # 1페이지 높이
+    frame_h_later = 255*mm # 2페이지 이후 높이
 
-    # [프레임 정의]
-    # 1페이지: 왼쪽 단, 오른쪽 단
+    # 프레임 정의
     frame_first_left = Frame(10*mm, 20*mm, frame_w, frame_h_first, id='F1_L')
     frame_first_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_first, id='F1_R')
     
-    # 2페이지 이후: 왼쪽 단, 오른쪽 단
     frame_later_left = Frame(10*mm, 20*mm, frame_w, frame_h_later, id='F2_L')
     frame_later_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_later, id='F2_R')
 
-    # [1페이지 그리기 함수] : 타이틀 및 결재란, 단 구분선 포함
+    # [1페이지 그리기 함수]
     def draw_first_page(canvas, doc):
         canvas.saveState()
         
-        # 1. 메인 타이틀 (중앙 상단)
+        # 1. 메인 타이틀
         canvas.setFont("NotoSansKR", 20)
         canvas.drawCentredString(A4[0]/2, 275*mm, header_info['title']) 
         
@@ -107,30 +102,28 @@ def create_2column_pdf(doc_title, header_info, content_text):
         canvas.setFont("NotoSansKR", 12)
         canvas.drawCentredString(A4[0]/2, 265*mm, header_info['sub_title']) 
         
-        # 3. 결재란/정보란 박스 (오른쪽 상단)
+        # 3. 결재란 (우측 상단)
         box_y = 250*mm
         canvas.setFont("NotoSansKR", 10)
         canvas.setLineWidth(0.5)
         
-        # 가로선 그리기 (상단선, 하단선)
         canvas.line(10*mm, box_y, 200*mm, box_y) 
         canvas.line(10*mm, box_y - 10*mm, 200*mm, box_y - 10*mm)
         
-        # 정보 텍스트 입력
         info_text = f"제 {header_info['grade']} 학년      반      번    이름 : ____________________    점수 : __________"
         canvas.drawString(15*mm, box_y - 7*mm, info_text)
         
         # 4. 단 구분선 (중앙 점선)
-        canvas.setDash(2, 2) # 점선 설정
+        canvas.setDash(2, 2)
         canvas.line(A4[0]/2, 20*mm, A4[0]/2, 240*mm)
         
-        # 5. 하단 푸터 (페이지 번호 등)
-        canvas.restoreState() # 실선 복구
+        # 5. 하단 푸터
+        canvas.restoreState()
         canvas.setFont("NotoSansKR", 9)
         canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
         canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
 
-    # [2페이지 이후 그리기 함수] : 단 구분선만 포함
+    # [2페이지 이후 그리기 함수]
     def draw_later_page(canvas, doc):
         canvas.saveState()
         # 중앙 점선
@@ -142,23 +135,19 @@ def create_2column_pdf(doc_title, header_info, content_text):
         canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
         canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
 
-    # 템플릿 등록 (First 페이지와 Later 페이지 구분)
+    # 템플릿 등록
     template_first = PageTemplate(id='First', frames=[frame_first_left, frame_first_right], onPage=draw_first_page)
     template_later = PageTemplate(id='Later', frames=[frame_later_left, frame_later_right], onPage=draw_later_page)
 
     doc.addPageTemplates([template_first, template_later])
 
-    # Story(본문 내용) 채우기
+    # 내용 채우기
     story = []
-    
-    # 텍스트 줄바꿈 처리 및 문단 생성
     for line in content_text.split('\n'):
         if line.strip():
-            # ReportLab Paragraph 객체 생성
             p = Paragraph(line.strip(), style_body)
             story.append(p)
     
-    # PDF 빌드
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -167,85 +156,81 @@ def create_2column_pdf(doc_title, header_info, content_text):
 # 4. 메인 실행 및 AI 생성 로직
 # --------------------------------------------------------------------------
 if st.button("High-Level 실전 시험지 생성", type="primary", use_container_width=True):
-    with st.spinner("최고급 AI 모델(Pro)이 문제를 정밀하게 출제 중입니다..."):
+    with st.spinner("AI가 문제를 출제하고 있습니다... (약 10~20초 소요)"):
         
-        # [프롬프트 강화]
         prompt = f"""
-        당신은 대한민국 최상위권 학생들을 가르치는 엠베스트 SE 영어 강사입니다.
+        당신은 엠베스트 SE 영어 강사입니다.
         아래 조건에 맞춰 완벽한 시험지를 작성하세요.
         
         [출제 정보]
         - 대상: {grade}
-        - 교과서/범위: {publisher}, {unit}
-        - 문항 수: {num_questions}문항
-        - 난이도: {difficulty} (변별력 있는 문제 포함)
+        - 범위: {publisher}, {unit}
+        - 문항: {num_questions}문항
+        - 난이도: {difficulty}
 
-        [출력 형식 가이드 - 엄격 준수]
-        1. 모든 문제는 '1.', '2.' 숫자로 시작해야 함.
-        2. 객관식 보기는 반드시 '①, ②, ③, ④, ⑤' 특수문자를 사용할 것.
-        3. 지문이 필요한 경우 [지문] 이라고 표시하고 내용을 작성할 것.
-        4. 문제지와 정답지는 '===절취선===' 텍스트로 명확히 구분할 것.
-        5. 각 문제는 논리적이고 깔끔하게 줄바꿈할 것.
+        [형식 가이드]
+        1. 모든 문제는 '1.', '2.' 숫자로 시작.
+        2. 보기: ①, ②, ③, ④, ⑤ 특수문자 사용.
+        3. 지문 필요 시 [지문] 표시 후 내용 작성.
+        4. 문제지와 정답지는 '===절취선==='으로 구분.
+        5. 정답지는 '1. 정답: ① / 해설: ...' 형식.
         
-        [내용 작성 예시]
+        [작성 시작]
         ===문제지===
-        1. 다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?
-           [지문] (영어 지문 내용...)
-           ① choice 1  ② choice 2  ③ choice 3  ④ choice 4  ⑤ choice 5
-
-        (계속...)
-
-        ===절취선===
-
-        ===정답지===
-        1. 정답: ③
-           해설: (상세한 해설 작성)
         """
         
         try:
-            # [모델 업그레이드] 1.5-pro 모델 사용 (퀄리티 향상)
-            model = genai.GenerativeModel("gemini-1.5-pro") 
+            # [수정] 모델을 안정적인 1.5-flash로 변경 (404 에러 방지)
+            model = genai.GenerativeModel("gemini-1.5-flash") 
             response = model.generate_content(prompt)
             text_data = response.text
             
-            # 텍스트 파싱 (문제지와 정답지 분리)
+            # 파싱
             if "===절취선===" in text_data:
                 parts = text_data.split("===절취선===")
                 q_text = parts[0].replace("===문제지===", "").strip()
                 a_text = parts[1].replace("===정답지===", "").strip()
             else:
                 q_text = text_data
-                a_text = "⚠️ 정답지가 별도로 구분되지 않았습니다. 전체 내용을 확인해주세요."
+                a_text = "⚠️ 정답지 구분선을 찾지 못했습니다. 전체 내용을 확인해주세요."
 
-            # [헤더 정보 설정]
-            # 문제지 헤더
+            # 헤더 정보
+            grade_clean = grade.replace("중","").replace("고","")
             header_info_q = {
                 'title': f"{unit} 단원평가",
-                'sub_title': f"[{publisher}] {grade} 내신 완벽 대비",
-                'grade': grade.replace("중","").replace("고","")
+                'sub_title': f"[{publisher}] {grade} 내신 대비",
+                'grade': grade_clean
             }
             
-            # 정답지 헤더
             header_info_a = {
                 'title': "정답 및 해설",
                 'sub_title': f"{unit} 단원평가",
                 'grade': "" 
             }
 
-            # PDF 생성 함수 호출
+            # PDF 생성
             pdf_q = create_2column_pdf(f"{grade} 시험지", header_info_q, q_text)
             pdf_a = create_2column_pdf(f"{grade} 정답지", header_info_a, a_text)
 
-            # 결과 다운로드 버튼 표시
+            # 다운로드 버튼
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                st.success("✅ 실전 문제지 생성 완료")
-                st.download_button("📄 문제지 PDF 다운로드", pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
+                st.success("✅ 문제지 생성 완료")
+                st.download_button("📄 문제지 다운로드", pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
             with col_d2:
-                st.success("✅ 정답 및 해설지 생성 완료")
-                st.download_button("🔑 정답지 PDF 다운로드", pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
+                st.success("✅ 정답지 생성 완료")
+                st.download_button("🔑 정답지 다운로드", pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
 
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
 
-st.caption("Developed by 엠베스트 SE 광사드림 학원 (Powered by Gemini 1.5 Pro)")
+# [수정] 저작권 안내 오른쪽 정렬
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style='text-align: right; color: gray; font-size: 0.8em;'>
+        Developed by 엠베스트 SE 광사드림 학원 (Powered by Gemini)
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
