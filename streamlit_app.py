@@ -13,12 +13,12 @@ from io import BytesIO
 # --------------------------------------------------------------------------
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
 
-# [폰트 설정] fonts 폴더 체크 (없으면 기본 폰트로 예외처리)
+# [폰트 설정]
 try:
     pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
     base_font = "NotoSansKR"
 except:
-    base_font = "Helvetica" # 폰트 파일 없을 시 영문 폰트 사용
+    base_font = "Helvetica" # 폰트가 없으면 영문 기본 폰트 사용
 
 # API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
@@ -60,189 +60,36 @@ with c2:
     difficulty = st.select_slider("난이도 설정", options=["하", "중", "상", "최상"], value="상")
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 로직 (2단 레이아웃 + 시험지 헤더 복구 완료)
+# 3. PDF 생성 로직 (2단 레이아웃 + 시험지 헤더 복구)
 # --------------------------------------------------------------------------
 def create_2column_pdf(doc_title, header_info, content_text):
     buffer = BytesIO()
     
-    # 여백 설정
+    # 여백 설정 (시험지처럼)
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=15*mm, bottomMargin=15*mm)
 
     styles = getSampleStyleSheet()
     
-    # 본문 스타일
+    # 본문 스타일 (가독성 최적화)
     style_body = ParagraphStyle(
         name='ExamBody',
         parent=styles['Normal'],
         fontName=base_font,
         fontSize=10.5,
-        leading=17,
-        spaceAfter=12,
-        alignment=0
+        leading=17,       # 줄 간격
+        spaceAfter=12,    # 문단 뒤 간격
+        alignment=0       # 좌정렬
     )
 
     # 2단 프레임 설정
-    frame_w = 90*mm
-    gap = 10*mm
+    frame_w = 90*mm   # 한 단의 너비
+    gap = 10*mm       # 단 사이 간격
     
-    frame_h_first = 220*mm 
-    frame_h_later = 255*mm 
+    frame_h_first = 220*mm # 1페이지 높이 (헤더 공간 제외)
+    frame_h_later = 255*mm # 2페이지 이후 높이
 
     # 프레임 정의
     frame_first_left = Frame(10*mm, 20*mm, frame_w, frame_h_first, id='F1_L')
-    frame_first_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_first, id='F1_R')
-    
-    frame_later_left = Frame(10*mm, 20*mm, frame_w, frame_h_later, id='F2_L')
-    frame_later_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_later, id='F2_R')
-
-    # [1페이지 헤더 그리기 함수] - 사용자 요청 디자인 복구
-    def draw_first_page(canvas, doc):
-        canvas.saveState()
-        
-        # 메인 타이틀
-        canvas.setFont(base_font, 20)
-        canvas.drawCentredString(A4[0]/2, 275*mm, header_info['title']) 
-        
-        # 서브 타이틀
-        canvas.setFont(base_font, 12)
-        canvas.drawCentredString(A4[0]/2, 265*mm, header_info['sub_title']) 
-        
-        # 결재란/점수란 박스 (우측 상단)
-        box_y = 250*mm
-        canvas.setFont(base_font, 10)
-        canvas.setLineWidth(0.5)
-        
-        canvas.line(10*mm, box_y, 200*mm, box_y) 
-        canvas.line(10*mm, box_y - 10*mm, 200*mm, box_y - 10*mm)
-        
-        info_text = f"제 {header_info['grade']} 학년      반      번    이름 : ____________________    점수 : __________"
-        canvas.drawString(15*mm, box_y - 7*mm, info_text)
-        
-        # 중앙 점선 (2단 구분)
-        canvas.setDash(2, 2)
-        canvas.line(A4[0]/2, 20*mm, A4[0]/2, 240*mm)
-        
-        # 푸터
-        canvas.restoreState()
-        canvas.setFont(base_font, 9)
-        canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
-        canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
-
-    # [2페이지 이후 그리기 함수]
-    def draw_later_page(canvas, doc):
-        canvas.saveState()
-        canvas.setDash(2, 2)
-        canvas.line(A4[0]/2, 20*mm, A4[0]/2, 280*mm)
-        canvas.restoreState()
-        canvas.setFont(base_font, 9)
-        canvas.drawCentredString(A4[0]/2, 10*mm, f"- {doc.page} -")
-        canvas.drawString(10*mm, 10*mm, "엠베스트 SE 광사드림 학원")
-
-    template_first = PageTemplate(id='First', frames=[frame_first_left, frame_first_right], onPage=draw_first_page)
-    template_later = PageTemplate(id='Later', frames=[frame_later_left, frame_later_right], onPage=draw_later_page)
-
-    doc.addPageTemplates([template_first, template_later])
-
-    story = []
-    for line in content_text.split('\n'):
-        if line.strip():
-            p = Paragraph(line.strip(), style_body)
-            story.append(p)
-    
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-# --------------------------------------------------------------------------
-# 4. 메인 실행 및 AI 생성 로직
-# --------------------------------------------------------------------------
-if st.button("High-Level 실전 시험지 생성", type="primary", use_container_width=True):
-    with st.spinner("AI가 교과서 내용을 분석하여 시험지를 출제 중입니다..."):
-        
-        prompt = f"""
-        당신은 엠베스트 SE 영어 강사입니다.
-        아래 조건에 맞춰 실제 학교 내신과 동일한 수준의 시험지를 작성하세요.
-        
-        [출제 범위 정보]
-        - 대상: {grade}
-        - 교과서: {publisher}
-        - 단원: {unit}
-        - 문항 수: {num_questions}문항
-        - 난이도: {difficulty}
-        
-        [필수 요청 사항]
-        1. **'{publisher}' 교과서의 '{unit}' 단원 내용을 반영해주세요.**
-        2. 문제는 수능형(빈칸, 순서, 삽입, 어법, 어휘)과 내신형을 섞어서 출제하세요.
-        
-        [출력 형식 가이드]
-        1. 모든 문제는 '1.', '2.' 숫자로 시작.
-        2. 보기: ①, ②, ③, ④, ⑤ 특수문자 사용.
-        3. 지문이 있는 경우 반드시 [지문] 이라고 표시하고 내용을 작성.
-        4. 문제지와 정답지는 '===절취선==='으로 명확히 구분.
-        5. 정답지는 '1. 정답: ① / 해설: 상세한 해설' 형식으로 작성.
-        
-        [작성 시작]
-        ===문제지===
-        """
-        
-        try:
-            # [모델 설정] 사용자님이 원하시던 최적 모델 (1.5-flash) 사용
-            # (2.5는 존재하지 않는 모델이라 1.5-flash로 설정해 드립니다. 성능은 가장 좋습니다.)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            
-            text_data = response.text
-            
-            # 파싱
-            if "===절취선===" in text_data:
-                parts = text_data.split("===절취선===")
-                q_text = parts[0].replace("===문제지===", "").strip()
-                a_text = parts[1].replace("===정답지===", "").strip()
-            else:
-                q_text = text_data
-                a_text = "⚠️ 정답지 구분선을 찾지 못했습니다. 전체 내용을 확인해주세요."
-
-            # [헤더 정보 설정] - Syntax Error 발생하던 부분 완벽 수정
-            grade_clean = grade.replace("중","").replace("고","")
-            
-            header_info_q = {
-                'title': f"{unit} 단원평가",
-                'sub_title': f"[{publisher}] {grade} 내신 1등급 대비",
-                'grade': grade_clean
-            }
-            
-            header_info_a = {
-                'title': "정답 및 해설",
-                'sub_title': f"{unit} 단원평가",
-                'grade': "" 
-            }
-
-            # PDF 생성
-            pdf_q = create_2column_pdf(f"{grade} 시험지", header_info_q, q_text)
-            pdf_a = create_2column_pdf(f"{grade} 정답지", header_info_a, a_text)
-
-            # 다운로드 버튼
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.success(f"✅ {publisher} 문제지 생성 완료")
-                st.download_button("📄 문제지 다운로드", pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
-            with col_d2:
-                st.success("✅ 정답지 생성 완료")
-                st.download_button("🔑 정답지 다운로드", pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
-
-        except Exception as e:
-            # 에러 발생 시 메시지 표시
-            st.error(f"오류가 발생했습니다: {e}")
-            st.warning("팁: API 키 권한이 부족하거나 모델 접근이 제한된 상태일 수 있습니다.")
-
-st.markdown("<br><hr>", unsafe_allow_html=True)
-st.markdown(
-    """
-    <div style='text-align: right; color: gray; font-size: 0.8em;'>
-        Developed by 엠베스트 SE 광사드림 학원 (Powered by Gemini)
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+    frame_first_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_first,
