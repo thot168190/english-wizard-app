@@ -4,7 +4,6 @@ from reportlab.platypus import BaseDocTemplate, Paragraph, Frame, PageTemplate
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
@@ -31,20 +30,29 @@ else:
 # 2. UI 화면 구성
 # --------------------------------------------------------------------------
 st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광사드림 학원</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center; color:#374151;'>AI 실전 모의고사 생성기 (Stable Ver.)</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level AI 실전 모의고사 생성기</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 # 상단 선택 옵션
 col1, col2, col3 = st.columns(3)
+
 with col1:
     grade = st.selectbox("학년", ["중1", "중2", "중3", "고1", "고2", "고3"])
+
 with col2:
+    # 학년에 따른 출판사 목록 동적 변경
     if "중" in grade:
-        publisher = st.selectbox("출판사", ["동아 (윤정미)", "천재 (정사열)", "천재 (이재영)", "비상 (김진완)", "미래엔 (최연희)"])
+        publisher_list = ["동아 (윤정미)", "천재 (정사열)", "천재 (이재영)", "비상 (김진완)", "미래엔 (최연희)", "기타"]
+    elif grade == "고2":
+        # 요청하신 YBM 박준언 추가
+        publisher_list = ["YBM (박준언)", "YBM (한상호)", "천재 (이재영)", "비상 (홍민표)", "수능특강", "모의고사"]
     else:
-        publisher = "수능특강/모의고사 변형"
+        publisher_list = ["수능특강", "모의고사", "교과서 공통"]
+        
+    publisher = st.selectbox("출판사/범위", publisher_list)
+
 with col3:
-    unit = st.text_input("단원명 (예: 1. Nice to Meet You)", "1. Nice to Meet You")
+    unit = st.text_input("단원명 (예: 1. Lesson 1)", "1. The Part You Play")
 
 # 문제 수 및 난이도 조절
 c1, c2 = st.columns(2)
@@ -157,34 +165,58 @@ def create_2column_pdf(doc_title, header_info, content_text):
 # --------------------------------------------------------------------------
 # 4. 메인 실행 및 AI 생성 로직
 # --------------------------------------------------------------------------
-if st.button("실전 시험지 생성 (Start)", type="primary", use_container_width=True):
-    with st.spinner("AI가 문제를 출제하고 있습니다... (약 20초 소요)"):
+if st.button("High-Level 실전 시험지 생성", type="primary", use_container_width=True):
+    with st.spinner("교과서 본문을 분석하고 문제를 출제 중입니다..."):
         
+        # [프롬프트] 실제 본문 내용 반영 요청
         prompt = f"""
         당신은 엠베스트 SE 영어 강사입니다.
-        아래 조건에 맞춰 완벽한 시험지를 작성하세요.
+        아래 조건에 맞춰 실제 학교 내신과 동일한 수준의 시험지를 작성하세요.
         
-        [출제 정보]
+        [출제 범위 정보]
         - 대상: {grade}
-        - 범위: {publisher}, {unit}
-        - 문항: {num_questions}문항
+        - 교과서: {publisher}
+        - 단원: {unit}
+        - 문항 수: {num_questions}문항
         - 난이도: {difficulty}
-
-        [형식 가이드]
+        
+        [필수 요청 사항]
+        1. **가능하다면 '{publisher}' 교과서의 '{unit}' 단원 실제 본문 내용을 인용하여 지문을 구성해주세요.**
+        2. 만약 저작권 문제로 실제 본문을 그대로 쓸 수 없다면, 해당 단원의 핵심 문법과 어휘, 주제를 완벽하게 반영한 '변형 지문'을 만들어주세요.
+        3. 문제는 수능형(빈칸, 순서, 삽입, 어법, 어휘)과 내신형(서술형 포함)을 섞어서 출제하세요.
+        
+        [출력 형식 가이드]
         1. 모든 문제는 '1.', '2.' 숫자로 시작.
-        2. 보기: ①, ②, ③, ④, ⑤ 특수문자 사용.
-        3. 지문 필요 시 [지문] 표시 후 내용 작성.
-        4. 문제지와 정답지는 '===절취선==='으로 구분.
-        5. 정답지는 '1. 정답: ① / 해설: ...' 형식.
+        2. 보기: ①, ②, ③, ④, ⑤ 특수문자 사용 (괄호 금지).
+        3. 지문이 있는 경우 반드시 [지문] 이라고 표시하고 내용을 작성.
+        4. 문제지와 정답지는 '===절취선==='으로 명확히 구분.
+        5. 정답지는 '1. 정답: ① / 해설: 상세한 해설' 형식으로 작성.
         
         [작성 시작]
         ===문제지===
         """
         
+        # [모델 자동 선택 로직] 에러 방지를 위한 핵심 코드
+        # 1순위: gemini-1.5-flash (가장 빠르고 정확함)
+        # 2순위: gemini-pro (가장 안정적임)
+        available_models = ["gemini-1.5-flash", "gemini-pro"]
+        model = None
+        
         try:
-            # [수정] 404 에러 방지를 위해 가장 안정적인 'gemini-pro' 모델 사용
-            model = genai.GenerativeModel("gemini-pro") 
+            # 1.5 Flash 시도
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(prompt)
+        except Exception as e:
+            # 실패 시 Pro 모델 시도
+            try:
+                model = genai.GenerativeModel("gemini-pro")
+                response = model.generate_content(prompt)
+            except Exception as e2:
+                st.error(f"모든 AI 모델 연결에 실패했습니다. API 키를 확인해주세요.\n에러 메시지: {e2}")
+                st.stop()
+
+        # 응답 처리
+        if model:
             text_data = response.text
             
             # 파싱
@@ -196,12 +228,12 @@ if st.button("실전 시험지 생성 (Start)", type="primary", use_container_wi
                 q_text = text_data
                 a_text = "⚠️ 정답지 구분선을 찾지 못했습니다. 전체 내용을 확인해주세요."
 
-            # [헤더 정보 설정 - Syntax Error 수정 완료]
+            # [헤더 정보 설정 - 따옴표 문법 오류 수정 완료]
             grade_clean = grade.replace("중","").replace("고","")
             
             header_info_q = {
                 'title': f"{unit} 단원평가",
-                'sub_title': f"[{publisher}] {grade} 내신 대비",
+                'sub_title': f"[{publisher}] {grade} 내신 1등급 대비",
                 'grade': grade_clean
             }
             
@@ -218,15 +250,11 @@ if st.button("실전 시험지 생성 (Start)", type="primary", use_container_wi
             # 다운로드 버튼
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                st.success("✅ 문제지 생성 완료")
+                st.success(f"✅ {publisher} 문제지 생성 완료")
                 st.download_button("📄 문제지 다운로드", pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
             with col_d2:
                 st.success("✅ 정답지 생성 완료")
                 st.download_button("🔑 정답지 다운로드", pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
-
-        except Exception as e:
-            st.error(f"오류가 발생했습니다: {e}")
-            st.warning("팁: 'gemini-pro' 모델을 사용 중입니다. API 키가 유효한지 확인해주세요.")
 
 # 저작권 안내 (우측 하단 정렬)
 st.markdown("<br><hr>", unsafe_allow_html=True)
