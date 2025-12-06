@@ -78,12 +78,11 @@ def load_textbook(grade, publisher, unit):
     return "", False, file_name
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 엔진 (가장 안정적이었던 버전 복구)
+# 3. PDF 생성 엔진 (디자인 완전 복구: 박스 제거, 파란 숫자 강조)
 # --------------------------------------------------------------------------
 def create_pdf(header_info, items_data, doc_type="question"):
     buffer = BytesIO()
     
-    # 상단 여백 35mm (헤더 공간)
     doc = BaseDocTemplate(buffer, pagesize=A4,
                           leftMargin=10*mm, rightMargin=10*mm,
                           topMargin=35*mm, bottomMargin=15*mm)
@@ -198,12 +197,13 @@ def create_pdf(header_info, items_data, doc_type="question"):
                 content_elements.append(p_ans)
 
         # ----------------------------------------------------
-        # 왼쪽 칸 (문항 번호) – 안정적인 박스 스타일
+        # 왼쪽 칸 (문항 번호) – [수정됨] 박스 제거, 파란색 숫자만!
         # ----------------------------------------------------
         if doc_type == "question":
-            num_html = f"<font name='{bold_font}' color='#2F74B5' size='13'><b>{idx+1}</b></font>"
+            # 번호만 파란색(Blue)으로 크게
+            num_html = f"<font name='{bold_font}' color='#2F74B5' size='13'><b>{idx+1}.</b></font>"
         else:
-            num_html = f"<font name='{bold_font}' size='11'><b>{idx+1}</b></font>"
+            num_html = f"<font name='{bold_font}' size='11'><b>{idx+1}.</b></font>"
 
         p_num = Paragraph(num_html, style_normal)
 
@@ -212,15 +212,14 @@ def create_pdf(header_info, items_data, doc_type="question"):
         # ----------------------------------------------------
         row_data = [[p_num, content_elements]]
 
-        t_main = Table(row_data, colWidths=[12*mm, 78*mm])
+        t_main = Table(row_data, colWidths=[8*mm, 82*mm]) # 번호칸 8mm, 내용칸 82mm
         t_main.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('ALIGN', (0,0), (0,0), 'CENTER'),
-            ('LEFTPADDING', (0,0), (0,0), 0),
-            ('RIGHTPADDING', (0,0), (0,0), 0),
-            ('LEFTPADDING', (1,0), (1,-1), 4),
-            ('BACKGROUND', (0,0), (0,0), colors.HexColor("#F5F9FF")), 
-            ('BOX', (0,0), (0,0), 0.5, colors.HexColor("#2F74B5")),   
+            ('ALIGN', (0,0), (0,0), 'LEFT'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            # [중요] 배경색(BACKGROUND)과 박스(BOX) 제거 -> 깔끔한 숫자만 나옴
         ]))
 
         story.append(KeepTogether([t_main]))
@@ -231,11 +230,15 @@ def create_pdf(header_info, items_data, doc_type="question"):
     return buffer
 
 # --------------------------------------------------------------------------
-# 4. AI 파싱 로직
+# 4. AI 파싱 로직 (번호, 누락 방지 강화)
 # --------------------------------------------------------------------------
 def parse_ai_response(text):
     questions = []
+    
+    # 1. 태그 기준으로 나눔
     blocks = text.split("[[문제]]")
+    
+    # 2. 만약 태그가 깨져서 덩어리가 적다면, 강제로 숫자 패턴으로 나눔 (비상 대책)
     if len(blocks) < 2:
          blocks = re.split(r'\n\s*\d+\.\s*', text)
 
@@ -243,6 +246,7 @@ def parse_ai_response(text):
         if not block.strip(): continue
         item = {'passage': '', 'question': '', 'choices': [], 'answer': '', 'explanation': ''}
         
+        # 지문 추출
         if "[[지문]]" in block:
             try:
                 parts = block.split("[[/지문]]")
@@ -253,6 +257,7 @@ def parse_ai_response(text):
         else:
             remain = block
             
+        # 정답 추출
         if "[[정답]]" in remain:
             parts = remain.split("[[정답]]")
             content_part = parts[0]
@@ -264,6 +269,9 @@ def parse_ai_response(text):
             else:
                 item['answer'] = ans_part.strip()
             remain = content_part
+        else:
+            # 정답 태그가 없을 경우에도 문제로 인식하도록 처리
+            remain = block
         
         lines = remain.strip().split('\n')
         q_lines = []
@@ -272,6 +280,8 @@ def parse_ai_response(text):
         for line in lines:
             line = line.strip()
             if not line: continue
+            
+            # 보기 패턴 체크 (①, 1., a. 등)
             is_choice = False
             if re.match(r'^[\(]?[①-⑮\d]+[\.\)]', line): is_choice = True
             if line.startswith('①'): is_choice = True
@@ -280,12 +290,16 @@ def parse_ai_response(text):
             if is_choice:
                 c_lines.append(line)
             else:
+                # 질문 앞에 붙은 번호 제거 (우리가 새로 붙일 거니까)
                 cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
                 if cleaned: q_lines.append(cleaned)
                 
         item['question'] = " ".join(q_lines)
         item['choices'] = c_lines
-        if item['question']: questions.append(item)
+        
+        # 질문이 있으면 무조건 추가
+        if item['question']: 
+            questions.append(item)
             
     return questions
 
@@ -328,7 +342,9 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
     if not source_text.strip():
         st.error("본문 내용이 없습니다.")
     else:
+        # 선생님이 원하시는 2.5 Flash 모델 고정
         target_model_name = "gemini-2.5-flash"
+        
         with st.spinner(f"AI({target_model_name})가 문제를 생성 중입니다..."):
             
             prompt = f"""
@@ -365,7 +381,7 @@ if st.button("시험지 생성 (Start)", type="primary", use_container_width=Tru
                     
                     st.session_state.ws_pdf = create_pdf(header, parsed_data, "question")
                     st.session_state.ak_pdf = create_pdf(header, parsed_data, "answer")
-                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (디자인: 100% 이그잼포유 + 번호박스)")
+                    st.success(f"✅ {len(parsed_data)}문항 출제 완료! (디자인: 파란 숫자, 박스 제거)")
                 else:
                     st.error("AI 응답 분석 실패. 다시 시도해주세요.")
             except Exception as e:
