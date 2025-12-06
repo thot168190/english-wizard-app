@@ -87,7 +87,7 @@ if st.button("최고급 실전 시험지 생성 (완전 완벽)", type="primary"
             # 첫 번째 사진처럼 완벽한 헤더
             header = Table([
                 ["이름: ____________________", f"<font size=14 color='#00008B'><b>{grade} {unit} 문법·독해 평가</b></font>", "날짜: ________"],
-                ["", f"({num_questions}문항)", """, ""]
+                ["", f"({num_questions}문항)", ""]
             ], colWidths=[6*cm, 9*cm, 5*cm])
             header.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,-1), 'NotoSansKR'),
@@ -100,7 +100,7 @@ if st.button("최고급 실전 시험지 생성 (완전 완벽)", type="primary"
             story.append(header)
             story.append(Spacer(1, 20))
 
-            # 문제 전체 그대로 출력 (줄바꿈만 잘 처리)
+            # 문제 전체 그대로 출력
             for line in content.split('\n'):
                 if line.strip():
                     story.append(Paragraph(line.strip(), normal))
