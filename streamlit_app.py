@@ -7,35 +7,30 @@ import os
 
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 문제 생성기", page_icon="📝")
-st.title("📝 학원용 AI 문제 생성기 (최종 완성형)")
+st.title("📝 학원용 AI 문제 생성기 (지문 박스형)")
 
 # ==========================================
-# [기능] 학원 스타일 PDF 생성 함수 (지문박스 + 2단)
+# [기능] 학원 스타일 PDF 생성 함수
 # ==========================================
 def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     # 1. PDF 객체 생성 (A4 세로)
     pdf = FPDF()
     pdf.add_page()
     
-    # 2. 폰트 등록 (fonts 폴더 확인)
+    # 2. 폰트 등록 (fonts 폴더 확인 필수)
+    # 폰트 파일이 있는지 먼저 확인합니다.
     font_path = 'fonts/NotoSansKR-Regular.ttf' 
-    
-    # 폰트 파일 존재 여부 체크
     if not os.path.exists(font_path):
-        # 만약 못 찾으면 현재 경로의 모든 파일 출력 (디버깅용)
-        st.error(f"폰트 파일이 없습니다! 현재 위치: {os.getcwd()}")
-        st.write(f"파일 목록: {os.listdir('.')}")
-        if os.path.exists('fonts'):
-             st.write(f"fonts 폴더 내부: {os.listdir('fonts')}")
+        st.error(f"폰트 파일을 찾을 수 없습니다. (경로: {os.getcwd()}/{font_path})")
         return None
 
     try:
         pdf.add_font('NotoSansKR', '', font_path, uni=True)
     except Exception as e:
-        st.error(f"폰트 등록 에러: {e}")
+        st.error(f"폰트 등록 중 오류 발생: {e}")
         return None
 
-    # 3. 헤더 디자인 (제목 + 점수칸)
+    # 3. 헤더 (타이틀 + 점수칸)
     pdf.set_font('NotoSansKR', '', 20)
     pdf.cell(0, 15, title_text, align='C', ln=True)
     
@@ -47,17 +42,17 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     pdf.line(10, 35, 200, 35)
     pdf.ln(5)
 
-    # 4. [핵심] 지문 박스 그리기 (회색 배경)
+    # 4. 지문 박스 출력 (회색 배경)
     passage_text = data_json.get('passage', '지문 내용이 없습니다.')
     
-    pdf.set_fill_color(240, 240, 240) # 연한 회색
+    pdf.set_fill_color(245, 245, 245) # 아주 연한 회색
     pdf.set_font('NotoSansKR', '', 10)
     
-    # 지문 출력 (border=1은 테두리, fill=True는 배경색)
+    # 지문이 들어갈 높이 계산 (대략적으로)
     pdf.multi_cell(0, 8, txt=passage_text, border=1, fill=True)
     pdf.ln(10) # 지문과 문제 사이 간격
 
-    # 5. [핵심] 문제 2단 편집 로직
+    # 5. 문제 2단 편집 로직
     quiz_data = data_json.get('questions', [])
     
     pdf.set_font('NotoSansKR', '', 11)
@@ -66,12 +61,12 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
     import math
     half_q = math.ceil(total_q / 2)
     
-    start_y = pdf.get_y() # 지문 박스 끝난 위치 저장
+    start_y = pdf.get_y() # 지문 박스 끝난 위치부터 시작
     left_margin = 10
     right_margin_start = 110
     line_height = 8
     
-    # --- 왼쪽 단 (절반) ---
+    # --- 왼쪽 단 ---
     pdf.set_xy(left_margin, start_y)
     for i in range(half_q):
         item = quiz_data[i]
@@ -84,7 +79,7 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
                 pdf.multi_cell(w=85, h=6, txt=opt)
         pdf.ln(4)
 
-    # --- 오른쪽 단 (나머지) ---
+    # --- 오른쪽 단 ---
     pdf.set_xy(right_margin_start, start_y)
     for i in range(half_q, total_q):
         item = quiz_data[i]
@@ -117,7 +112,9 @@ def create_academy_style_pdf(data_json, title_text="English Grammar Test"):
 
 with st.sidebar:
     api_key = st.text_input("Google API Key를 입력하세요", type="password")
-    
+    st.markdown("---")
+    st.markdown("API 키가 없다면 [Google AI Studio](https://aistudio.google.com/)에서 발급받으세요.")
+
 tab1, tab2 = st.tabs(["교과서 정보 입력", "지문 직접 입력"])
 
 grade = ""
@@ -164,7 +161,7 @@ if generate_btn:
     else:
         context_prompt = f"아래 지문을 기반으로:\n{txt_input}\n"
 
-    # [핵심] 프롬프트: JSON 형식 + 밑줄 대신 (A) 표시 요청
+    # 프롬프트: 밑줄 대신 (A), (B) 표시 요청
     final_prompt = f"""
     {context_prompt}
     
@@ -198,7 +195,7 @@ if generate_btn:
         response = model.generate_content(final_prompt)
         text_response = response.text
 
-        # JSON 파싱 (에러 방지를 위해 괄호 체크)
+        # [수정완료] 여기가 아까 에러났던 부분입니다. 괄호를 닫았습니다.
         clean_json_text = re.sub(r'```json\s*|\s*```', '', text_response)
         
         # JSON 변환
@@ -207,7 +204,7 @@ if generate_btn:
         progress_bar.progress(100)
         status_text.text("생성 완료! 🎉")
         
-        # 화면 출력 (미리보기)
+        # 화면 출력
         st.markdown("### 📜 지문 미리보기")
         st.info(data_json.get('passage', '')) 
         
@@ -227,13 +224,14 @@ if generate_btn:
         
         if pdf_bytes:
             st.download_button(
-                label="📥 PDF 시험지 다운로드 (2단+지문박스)",
+                label="📥 PDF 시험지 다운로드",
                 data=pdf_bytes,
                 file_name="academy_test_final.pdf",
                 mime="application/pdf"
             )
 
     except json.JSONDecodeError:
-        st.error("AI 응답 형식이 올바르지 않습니다. 다시 시도해주세요.")
+        st.error("AI 응답을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요.")
+        st.write("원본 응답:", text_response)
     except Exception as e:
         st.error(f"에러가 발생했습니다: {e}")
