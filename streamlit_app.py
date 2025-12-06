@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepInFrame
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
@@ -9,7 +9,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 
-# 폰트 등록 (너 깃허브에 있음)
+# 폰트 등록
 pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
 
 st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
@@ -26,24 +26,31 @@ num_questions = st.slider("문제 수", 10, 40, 30, step=5)
 if st.button("최고급 실전 시험지 생성 (완전 완벽)", type="primary", use_container_width=True):
     with st.spinner("최고급 시험지 생성 중..."):
         prompt = f"""
-        엠베스트 SE 광사드림 학원 실전 시험지
-        {grade} {unit} 단원, 총 {num_questions}문항
-        최고 퀄리티로 만들어줘.
+        너는 대한민국 최상위 영어 학원의 스타 강사야.
+        {grade} 영어 교과서 {unit} 단원의 핵심 문법, 어휘, 독해를 완벽하게 반영해서
+        실제 학교 중간고사/기말고사 수준의 최고 퀄리티 문제를 {num_questions}개 만들어줘.
 
-        출력 형식:
+        문제는 반드시 다음과 같은 형식으로만 출력해 (다른 말 절대 하지 마):
 
         ===문제지===
-        1. 문제 내용
-           ① 보기1  ② 보기2  ③ 보기3  ④ 보기4
+        1. 다음 영영 풀이가 설명하는 단어로 가장 적절한 것은?
+           ① tradition ② custom ③ culture ④ festival
+
+        2. 다음 문장의 빈칸에 들어갈 말로 가장 적절한 것은?
+           Many Koreans still wear traditional clothes called Hanbok on special ______ like Chuseok and Seollal.
+           ① events ② parties ③ holidays ④ customs
 
         ===해답지===
-        1. 정답: ②  해설: ...
+        1. ③ culture
+           해설: An accepted way of behaving or doing things in a particular society or community.
+
+        2. ③ holidays
+           해설: Many Koreans still wear traditional clothes called Hanbok on special holidays like Chuseok and Seollal.
         """
         model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
         raw = response.text
 
-        # 정확한 파싱
         worksheet_text = ""
         answerkey_text = ""
         current = "worksheet"
@@ -59,7 +66,7 @@ if st.button("최고급 실전 시험지 생성 (완전 완벽)", type="primary"
             else:
                 answerkey_text += line + "\n"
 
-        def make_perfect_pdf(title, content):
+        def make_perfect_pdf(title, content, is_answer=False):
             buffer = BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=A4,
                                     topMargin=2*cm, bottomMargin=2*cm,
