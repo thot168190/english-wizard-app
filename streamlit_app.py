@@ -7,18 +7,33 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
+import os
+import requests  # 폰트 다운로드를 위해 추가
 
 # --------------------------------------------------------------------------
-# 1. 초기 설정 및 폰트 등록
+# 1. 초기 설정 및 폰트 등록 (자동 다운로드 기능 추가)
 # --------------------------------------------------------------------------
-st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="Trophy", layout="wide")
+st.set_page_config(page_title="엠베스트 SE 광사드림 학원", page_icon="🏆", layout="wide")
 
-# [폰트 설정] fonts 폴더 체크
+# [폰트 설정] 폰트 파일이 없으면 자동으로 다운로드 (한글 깨짐 방지)
+font_path = "NanumGothic.ttf"
+if not os.path.exists(font_path):
+    # 나눔고딕 폰트 다운로드 URL (구글 폰트)
+    url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+    try:
+        response = requests.get(url)
+        with open(font_path, "wb") as f:
+            f.write(response.content)
+    except:
+        pass
+
+# 폰트 등록 시도
 try:
-    pdfmetrics.registerFont(TTFont("NotoSansKR", "fonts/NotoSansKR-Regular.ttf"))
-    base_font = "NotoSansKR"
+    pdfmetrics.registerFont(TTFont("NanumGothic", font_path))
+    base_font = "NanumGothic"
 except:
-    base_font = "Helvetica" # 폰트가 없으면 영문 기본 폰트 사용
+    st.warning("⚠️ 한글 폰트를 로드하지 못했습니다. PDF에서 한글이 깨질 수 있습니다.")
+    base_font = "Helvetica" 
 
 # API 키 설정
 if "GOOGLE_API_KEY" in st.secrets:
@@ -34,6 +49,14 @@ st.markdown("<h1 style='text-align:center; color:#1E40AF;'>엠베스트 SE 광�
 st.markdown("<h3 style='text-align:center; color:#374151;'>High-Level AI 실전 모의고사 생성기</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
+# [중요] 세션 상태 초기화 (새로고침 시 데이터 유지용)
+if 'pdf_q' not in st.session_state:
+    st.session_state.pdf_q = None
+if 'pdf_a' not in st.session_state:
+    st.session_state.pdf_a = None
+if 'generated' not in st.session_state:
+    st.session_state.generated = False
+
 # 상단 선택 옵션
 col1, col2, col3 = st.columns(3)
 
@@ -44,7 +67,6 @@ with col2:
     if "중" in grade:
         publisher_list = ["동아 (윤정미)", "천재 (정사열)", "천재 (이재영)", "비상 (김진완)", "미래엔 (최연희)", "기타"]
     elif grade == "고2":
-        # 요청하신 YBM 박준언 포함
         publisher_list = ["YBM (박준언)", "YBM (한상호)", "천재 (이재영)", "비상 (홍민표)", "수능특강", "모의고사"]
     elif grade == "고1" or grade == "고3":
          publisher_list = ["YBM (박준언)", "YBM (한상호)", "천재 (이재영)", "비상 (홍민표)", "수능특강", "모의고사"]
@@ -63,7 +85,7 @@ with c2:
     difficulty = st.select_slider("난이도 설정", options=["하", "중", "상", "최상"], value="상")
 
 # --------------------------------------------------------------------------
-# 3. PDF 생성 로직 (2단 레이아웃 + 헤더 복구 + Syntax Error 수정)
+# 3. PDF 생성 로직 (2단 레이아웃 + 헤더 복구 + 한글 줄바꿈 수정)
 # --------------------------------------------------------------------------
 def create_2column_pdf(doc_title, header_info, content_text):
     buffer = BytesIO()
@@ -75,7 +97,7 @@ def create_2column_pdf(doc_title, header_info, content_text):
 
     styles = getSampleStyleSheet()
     
-    # 본문 스타일
+    # 본문 스타일 (한글 줄바꿈 wordWrap 추가)
     style_body = ParagraphStyle(
         name='ExamBody',
         parent=styles['Normal'],
@@ -83,7 +105,8 @@ def create_2column_pdf(doc_title, header_info, content_text):
         fontSize=10.5,
         leading=17,       
         spaceAfter=12,    
-        alignment=0       
+        alignment=0,
+        wordWrap='CJK' # 한글 단어 단위 줄바꿈 처리
     )
 
     # 2단 프레임 치수 설정
@@ -93,7 +116,6 @@ def create_2column_pdf(doc_title, header_info, content_text):
     frame_h_first = 220*mm # 1페이지 높이 (헤더 공간 제외)
     frame_h_later = 255*mm # 2페이지 이후 높이
 
-    # [Syntax Error 수정] 괄호 닫기 확인 및 줄바꿈 처리 주의
     frame_first_left = Frame(10*mm, 20*mm, frame_w, frame_h_first, id='F1_L')
     frame_first_right = Frame(10*mm + frame_w + gap, 20*mm, frame_w, frame_h_first, id='F1_R')
     
@@ -112,7 +134,7 @@ def create_2column_pdf(doc_title, header_info, content_text):
         canvas.setFont(base_font, 12)
         canvas.drawCentredString(A4[0]/2, 265*mm, header_info['sub_title']) 
         
-        # 3. 결재란/점수란 박스 (우측 상단 디자인 복구)
+        # 3. 결재란/점수란 박스
         box_y = 250*mm
         canvas.setFont(base_font, 10)
         canvas.setLineWidth(0.5)
@@ -157,20 +179,25 @@ def create_2column_pdf(doc_title, header_info, content_text):
     story = []
     for line in content_text.split('\n'):
         if line.strip():
-            p = Paragraph(line.strip(), style_body)
+            # 특수문자 에러 방지 (선택 사항)
+            clean_line = line.strip().replace('<', '&lt;').replace('>', '&gt;')
+            p = Paragraph(clean_line, style_body)
             story.append(p)
     
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    try:
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"PDF 생성 실패: {e}")
+        return None
 
 # --------------------------------------------------------------------------
 # 4. 메인 실행 및 AI 생성 로직
 # --------------------------------------------------------------------------
 if st.button("High-Level 실전 시험지 생성", type="primary", use_container_width=True):
-    with st.spinner("AI(Gemini 2.5)가 문제를 출제 중입니다..."):
+    with st.spinner("AI(Gemini 1.5 Flash)가 문제를 출제 중입니다..."):
         
-        # [프롬프트] 고2 YBM 박준언 내용 반영 요청
         prompt = f"""
         당신은 엠베스트 SE 영어 강사입니다.
         아래 조건에 맞춰 실제 학교 내신과 동일한 수준의 시험지를 작성하세요.
@@ -199,10 +226,8 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
         """
         
         try:
-            # [모델 고정] 사용자님 요청 및 스크린샷에 근거하여 2.5 버전 강제 사용
-            # (만약 이 이름으로도 안 된다면 'gemini-2.5-flash' 대신 스크린샷에 나온 정확한 풀네임을 넣어야 할 수도 있으나,
-            #  보통 'gemini-2.5-flash' 혹은 'models/gemini-2.5-flash'로 호출됩니다. 여기선 2.5-flash로 시도합니다.)
-            model = genai.GenerativeModel("gemini-2.5-flash") 
+            # [모델 수정] 2.5 -> 1.5-flash (존재하는 최신 모델로 변경)
+            model = genai.GenerativeModel("gemini-1.5-flash") 
             response = model.generate_content(prompt)
             text_data = response.text
             
@@ -215,7 +240,6 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
                 q_text = text_data
                 a_text = "⚠️ 정답지 구분선을 찾지 못했습니다. 전체 내용을 확인해주세요."
 
-            # [Syntax Error 수정] header_info 딕셔너리 내 문자열 따옴표 닫기 확인
             grade_clean = grade.replace("중","").replace("고","")
             
             header_info_q = {
@@ -234,18 +258,24 @@ if st.button("High-Level 실전 시험지 생성", type="primary", use_container
             pdf_q = create_2column_pdf(f"{grade} 시험지", header_info_q, q_text)
             pdf_a = create_2column_pdf(f"{grade} 정답지", header_info_a, a_text)
 
-            # 다운로드 버튼
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.success(f"✅ {publisher} 문제지 생성 완료 (Model: 2.5)")
-                st.download_button("📄 문제지 다운로드", pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
-            with col_d2:
-                st.success("✅ 정답지 생성 완료")
-                st.download_button("🔑 정답지 다운로드", pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
+            # 세션 상태에 저장 (다운로드 버튼 유지를 위해)
+            st.session_state.pdf_q = pdf_q
+            st.session_state.pdf_a = pdf_a
+            st.session_state.generated = True
 
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
-            st.warning("팁: 만약 404 에러라면, 사용자님의 API 키에서 허용된 모델 이름이 조금 다를 수 있습니다.")
+            st.warning("팁: API 키 설정을 확인하거나, 모델명을 'gemini-1.5-pro' 등으로 변경해보세요.")
+
+# 생성된 결과가 있으면 다운로드 버튼 표시 (버튼 눌러도 사라지지 않음)
+if st.session_state.generated and st.session_state.pdf_q:
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        st.success(f"✅ {publisher} 문제지 생성 완료")
+        st.download_button("📄 문제지 다운로드", st.session_state.pdf_q, f"엠베스트_{grade}_문제지.pdf", "application/pdf")
+    with col_d2:
+        st.success("✅ 정답지 생성 완료")
+        st.download_button("🔑 정답지 다운로드", st.session_state.pdf_a, f"엠베스트_{grade}_해설지.pdf", "application/pdf")
 
 # 하단 저작권 표시
 st.markdown("<br><hr>", unsafe_allow_html=True)
